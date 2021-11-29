@@ -322,11 +322,15 @@ bool App::InitD3D()
 	}
 
 	//コマンドアロケータの生成
+	/*
+	コマンドリストが使用するメモリを割当するためのもの
+	*/
 	{
+		//フレームバッファごとに作成
 		for (auto i = 0u; i < FrameCount; ++i) 
 		{
 			hr = m_pDevice->CreateCommandAllocator(
-				D3D12_COMMAND_LIST_TYPE_DIRECT,
+				D3D12_COMMAND_LIST_TYPE_DIRECT, //コマンドキューに直接登録可能なコマンドのみを扱える
 				IID_PPV_ARGS(&m_pCmdAllocator[i]));
 			if (FAILED(hr))
 			{
@@ -338,11 +342,11 @@ bool App::InitD3D()
 	//コマンドリストの生成
 	{
 		hr = m_pDevice->CreateCommandList(
-			0,
-			D3D12_COMMAND_LIST_TYPE_DIRECT,
-			m_pCmdAllocator[m_FrameIndex],
-			nullptr,
-			IID_PPV_ARGS(&m_CmdList)
+			0, //nodeMask: 複数のGPUノードがある場合に、ノードを識別するためのビットマスクを設定します
+			D3D12_COMMAND_LIST_TYPE_DIRECT, //type: 作成するコマンドリストのタイプを指定、コマンドキューに直接登録可能なコマンドのみを扱える
+			m_pCmdAllocator[m_FrameIndex], //pCommandAllocator: コマンドリストを作成するときのコマンドアロケータを指定、2つあるうちの描画コマンドをつんでいくのに使用するのはバクバッファの番号に対応するものなのでインデックスにm_FrameIndexを指定
+			nullptr, //pInitialState: パイプラインステートを指定、この引数はオプションなのでnullptrでも可、あとで明示的に指定するためにここでは設定しない。
+			IID_PPV_ARGS(&m_pCmdList)
 		);
 		if (FAILED(hr))
 		{
@@ -351,13 +355,51 @@ bool App::InitD3D()
 	}
 
 	//レンダーターゲットビューの生成
+	/*
+	レンダーターゲットとは描画の対象であり、その実態はバックバッファやテクスチャといったリソースとなる。
+	以下実態一覧
+	-
+	バッファ
+	一次元テクスチャ
+	一次元テクスチャ配列
+	二次元テクスチャ
+	二次元テクスチャ配列
+	マルチサンプル二次元テクスチャ
+	マルチサンプル二次元テクスチャ配列
+	三次元テクスチャ
+	キューブマップ
+	キューブマップ配列
+	-
+	ここのマルチサンプルとは各ピクセルの色を決定する際に複数のサンプル点を使用してピクセルの色を決定する事を言う。マルチサンプルの対比をシングルサンプルという
+	マルチサンプルの使い所はアンチエイリアスなど
+	マルチサンプルのデメリットはシェーダーでのデータ型シングルサンプルと異なったりフェッチ命令が異なったり処理負担が増えるといった点がある
+	*/
+	/*
+	メモリ上のリソースは単にメモリ領域がわかってるだけでそのバッファの区切り方が二次元テクスチャ配列なのか三次元テクスチャなのかわからない
+	そこで登場するのがリソースビューオブジェクト
+	レンダーターゲットの場合のリソースビューオブジェクトがレンダーターゲットビューとなる
+	*/
+	/*
+	レンダーターゲットビュー生成の流れ:
+	-
+	リソースの生成
+	ディスクリプタヒープの生成
+	レンダーターゲットビューの生成
+	-
+	今回のリソースはバックバッファなのでリソースの生成は無くて良い
+	*/
 	{
 		//ディスクリプタヒープの設定
+		/*
+		ディスクリプタヒープとはディスクリプタを保存するための配列。
+		このGPUでのディスクリプタは、GPUメモリ上に存在する様々なデータやバッファの種類や位置大きさを表す構造体のようなもの
+		*/
+		//https://cocoa-programing.hatenablog.com/entry/2018/11/21/%E3%80%90DirectX12%E3%80%91%E3%83%87%E3%82%B9%E3%82%AF%E3%83%AA%E3%83%97%E3%82%BF%E3%83%92%E3%83%BC%E3%83%97%E3%81%AE%E4%BD%9C%E6%88%90%E3%80%90%E5%88%9D%E6%9C%9F%E5%8C%96%E3%80%91
 		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-		desc.NumDescriptors = FrameCount;
-		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		desc.NodeMask = 0;
+		desc.NumDescriptors = FrameCount; //ヒープ内のディスクリプタ数
+		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; //ディスクリプタヒープのタイプ
+		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE; //シェーダ内から参照できるかどうか、今回はなし
+		desc.NodeMask = 0; //複数のGPUノードがある場合にノードを特定するためのビットマスクを設定
 
 		//ディスクリプタヒープを生成
 		hr = m_pDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_pHeapRTV));
@@ -366,32 +408,43 @@ bool App::InitD3D()
 			return false;
 		}
 
+		//ディスクリプタヒープ戦闘に格納されているCPUディスクリプタハンドルを取得
 		auto handle = m_pHeapRTV->GetCPUDescriptorHandleForHeapStart();
+		//ディスクリプタが一個の場合はこのまま使えば良いが、２個以上ある場合は先頭アドレスからどれくらいずらせばよいかわからないのでここで取得する
+		//この値はデバイス依存なのでGPUごとに取得する必要がある
 		auto incrementSize = m_pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
 		for (auto i = 0u; i < FrameCount; ++i)
 		{
+			//レンダーターゲットビューの生成にはどのリソースを使用するのかを渡して上げる必要があるのでバッファを取得
 			hr = m_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&m_pColorBuffer[i]));
 			if (FAILED(hr))
 			{
 				return false;
 			}
 
+			//レンダーターゲットビューの生成に必要な設定用の構造体
 			D3D12_RENDER_TARGET_VIEW_DESC viewDesc = {};
-			viewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-			viewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-			viewDesc.Texture2D.MipSlice = 0;
-			viewDesc.Texture2D.PlaneSlice = 0;
+			viewDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; //画面で見るときのピクセルフォーマットを指定
+			viewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D; //どのようにレンダーターゲットのリソースにアクセスするかを指定
+			//今回は二次元テクスチャなので二次元テクスチャ用の設定
+			viewDesc.Texture2D.MipSlice = 0; //今回はスワップチェインを制作するときにミップマップレベルを一つしかないように設定したので0に設定
+			viewDesc.Texture2D.PlaneSlice = 0; //テクスチャの平面スライス番号を指定、今回は平面を複数枚持つデータではないので0を指定
 
 			//レンダーターゲットビューの生成
 			m_pDevice->CreateRenderTargetView(m_pColorBuffer[i], &viewDesc, handle);
 
 			m_HandleRTV[i] = handle;
+			//ポインタをずらす
 			handle.ptr += incrementSize;
 		}
 	}
 
 	//フェンスの生成
+	/*
+	フェンスオブジェクトとは同期をとるためのもの
+	フェンス自体の値がインクリメントされたかどうかで描画が完了したかを確認し同期を取る
+	*/
 	{
 		//フェンスカウンターをリセット
 		for (auto i = 0u; i < FrameCount; ++i)
@@ -401,8 +454,8 @@ bool App::InitD3D()
 
 		//フェンスの生成
 		hr = m_pDevice->CreateFence(
-			m_FenceCounter[m_FrameIndex],
-			D3D12_FENCE_FLAG_NONE,
+			m_FenceCounter[m_FrameIndex], //フェンスの初期化に用いる値
+			D3D12_FENCE_FLAG_NONE, //フラグオプション、フェンスを共有するかどうかなど
 			IID_PPV_ARGS(&m_pFence));
 		if (FAILED(hr))
 		{
@@ -412,7 +465,13 @@ bool App::InitD3D()
 		m_FenceCounter[m_FrameIndex]++;
 
 		//イベントの生成
-		m_FenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+		//終わるまで待つという処理をOSの機能を使用して行う
+		m_FenceEvent = CreateEvent(
+			nullptr, //lpEventAttributes: 子プロセスが取得したハンドルを継承できるかどうかを決定する構造体へのポインタを指定
+			FALSE, //bManualReset: 手動のリセットオブジェクトを作成するかどうか
+			FALSE, //bInitialState: イベントオブジェクトの初期状態の指定、TRUEを指定するとシグナル情報に
+			nullptr //lpName: イベントオブジェクトの名前をNULL終端文字列で指定
+		);
 		if (m_FenceEvent == nullptr)
 		{
 			return false;

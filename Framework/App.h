@@ -28,13 +28,13 @@ private:
 	IDXGISwapChain3* m_pSwapChain; //スワップチェーン
 	ID3D12Resource* m_pColorBuffer[FrameCount]; //カラーバッファ
 	ID3D12CommandAllocator* m_pCmdAllocator[FrameCount]; //コマンドアロケータ
-	ID3D12GraphicsCommandList* m_CmdList; //コマンドリスト
+	ID3D12GraphicsCommandList* m_pCmdList; //コマンドリスト
 	ID3D12DescriptorHeap* m_pHeapRTV; //ディスクリプタヒープ(レンダーターゲットビュー)
 	ID3D12Fence* m_pFence; //フェンス
-	HANDLE m_FnenceEvent; //フェンスイベント
+	HANDLE m_FenceEvent; //フェンスイベント
 	uint64_t m_FenceCounter[FrameCount]; //フェンスカウンタ
 	uint32_t m_FrameIndex; //フレーム番号
-	D3D12_CPU_DESCRIPTOR_HANDLE m_HnadleRTV[FrameCount]; //CPUディスクリプタ(レンダーターゲットビュー)
+	D3D12_CPU_DESCRIPTOR_HANDLE m_HandleRTV[FrameCount]; //CPUディスクリプタ(レンダーターゲットビュー)
 
 	bool InitApp();
 	void TermApp();
