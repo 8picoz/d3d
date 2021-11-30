@@ -344,7 +344,7 @@ bool App::InitD3D()
 		hr = m_pDevice->CreateCommandList(
 			0, //nodeMask: 複数のGPUノードがある場合に、ノードを識別するためのビットマスクを設定します
 			D3D12_COMMAND_LIST_TYPE_DIRECT, //type: 作成するコマンドリストのタイプを指定、コマンドキューに直接登録可能なコマンドのみを扱える
-			m_pCmdAllocator[m_FrameIndex], //pCommandAllocator: コマンドリストを作成するときのコマンドアロケータを指定、2つあるうちの描画コマンドをつんでいくのに使用するのはバクバッファの番号に対応するものなのでインデックスにm_FrameIndexを指定
+			m_pCmdAllocator[m_FrameIndex], //pCommandAllocator: コマンドリストを作成するときのコマンドアロケータを指定、2つあるうちの描画コマンドをつんでいくのに使用するのはバックバッファの番号に対応するものなのでインデックスにm_FrameIndexを指定
 			nullptr, //pInitialState: パイプラインステートを指定、この引数はオプションなのでnullptrでも可、あとで明示的に指定するためにここでは設定しない。
 			IID_PPV_ARGS(&m_pCmdList)
 		);
@@ -408,7 +408,7 @@ bool App::InitD3D()
 			return false;
 		}
 
-		//ディスクリプタヒープ戦闘に格納されているCPUディスクリプタハンドルを取得
+		//ディスクリプタヒープ先頭に格納されているCPUディスクリプタハンドルを取得
 		auto handle = m_pHeapRTV->GetCPUDescriptorHandleForHeapStart();
 		//ディスクリプタが一個の場合はこのまま使えば良いが、２個以上ある場合は先頭アドレスからどれくらいずらせばよいかわからないのでここで取得する
 		//この値はデバイス依存なのでGPUごとに取得する必要がある
@@ -470,7 +470,7 @@ bool App::InitD3D()
 			nullptr, //lpEventAttributes: 子プロセスが取得したハンドルを継承できるかどうかを決定する構造体へのポインタを指定
 			FALSE, //bManualReset: 手動のリセットオブジェクトを作成するかどうか
 			FALSE, //bInitialState: イベントオブジェクトの初期状態の指定、TRUEを指定するとシグナル情報に
-			nullptr //lpName: イベントオブジェクトの名前をNULL終端文字列で指定
+			nullptr //lpName: イベントオブジェクトの名前をNULL終端文字列で指定	
 		);
 		if (m_FenceEvent == nullptr)
 		{
@@ -482,4 +482,83 @@ bool App::InitD3D()
 	m_pCmdList->Close();
 
 	return true;
+}
+
+void App::Render()
+{
+	//コマンドの記録を開始
+	
+	//コマンドバッファの内容を戦闘に戻す
+	m_pCmdAllocator[m_FrameIndex]->Reset();
+	//コマンドリストの初期化処理、第２引数はパイプラインアロケータだが今回は使用しない
+	m_pCmdList->Reset(m_pCmdAllocator[m_FrameIndex], nullptr);
+
+	//リソースバリアの設定
+	/*
+	DX12はマルチスレッド対応をしているためGPUが表示している領域を上書きして表示を崩してしまうなどの割り込み処理を防ぐ機能
+	ここでいう遷移とはリソース(フレームバッファ(?))に対して書き込み状態か表示状態のどちからに遷移すること
+	サブリソースとはミップマップやキューー部マップなどのテクスチャの構成単位
+	*/
+	D3D12_RESOURCE_BARRIER barrier = {};
+	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION; //リソースバリアのタイプを指定、今回は様々な使用用途の間のサブリソースセットの遷移を示すバリア
+	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE; //フラグの設定
+	//Transitionはサブリソースが異なる使用用途の場合に設定する
+	barrier.Transition.pResource = m_pColorBuffer[m_FrameIndex]; //遷移に使用するためのリソースのポインタを指定
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT; //サブリソースの使用前の状態を指定
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET; //サブリソースの使用後の状態を指定
+	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES; //遷移のためのサブリソースの番号を指定、今回の場合だとすべてのサブリソースを遷移させる
+
+	//リソースバリア
+	m_pCmdList->ResourceBarrier(1, &barrier);
+
+	//書き込む準備完了
+
+	//レンダーターゲットの設定
+	m_pCmdList->OMSetRenderTargets(
+		1, //NumRenderTargetDescripter: 設定するレンダーターゲットビュー用のディスクリプタハンドルの個数を設定
+		&m_HandleRTV[m_FrameIndex], //pRenderTargetDescriptors: 設定するレンダーターゲットビューのハンドルの配列を指定
+		FALSE, //RTSingleHandleToDescriptorRange: 設定するディスクリプタハンドルの配列の範囲を単独とするかどうか指定。例えばRTVを3つ設定する場合TRUEにすると3つのRTVに対して同じディスクリプタハンドルが設定される
+		nullptr //pDepthStencilDescriptor: 深度ステンシルビューディスクリプタの設定
+	);
+
+	//クリアカラーの設定, 背景色
+	float clearColor[] = { 0.25f, 0.25f, 0.25f, 1.0f };
+
+	//レンダーターゲットビューをクリア
+	m_pCmdList->ClearRenderTargetView(
+		m_HandleRTV[m_FrameIndex], //RenderTargetView: レンダーターゲットビューをクリアするためのディスクリプタハンドルを指定
+		clearColor, //ColorRGBA: レンダーターゲットをクリアするための色を指定
+		0, //NumRects: 設定する矩形の数を指定
+		nullptr //pRects: レンダーターゲットをクリアするための矩形の配列を指定
+	);
+
+	//描画処理
+	{
+		//TODO: ポリゴン描画用の処理を追加
+	}
+
+	//リソースバリアの設定
+	/*
+	もうレンダーターゲットに書き込む必要はないので上記と同じように状態を"表示する"にリソースバリアをもとに戻す
+	*/
+	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	barrier.Transition.pResource = m_pColorBuffer[m_FrameIndex];
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+	//リソースバリア
+	m_pCmdList->ResourceBarrier(1, &barrier);
+
+	//コマンドの記録を終了
+	m_pCmdList->Close();
+
+	//コマンドを実行
+	//作成したコマンドリストは何もしなければ実行されないのでここでコマンドキューに渡してあげる
+	ID3D12CommandList* ppCmdLists[] = { m_pCmdList };
+	m_pQueue->ExecuteCommandLists(1, ppCmdLists);
+
+	//画面に表示
+	Present(1);
 }
