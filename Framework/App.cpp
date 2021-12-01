@@ -1,4 +1,5 @@
 #include "App.h"
+#include <cassert>
 
 template<typename T>
 void SafeRelease(T*& ptr) 
@@ -624,4 +625,70 @@ void App::Present(uint32_t interval)
 
 	//次フレームのフェンスカウンターを増やす
 	m_FenceCounter[m_FrameIndex] = currentValue + 1;
+}
+
+/*
+終了処理を行う前にGPUの実行中に必要なオブジェクトを開放してしまうと、色々よくないのでここですべて終了するまで待機
+*/
+void App::WaitGpu()
+{
+	assert(m_pQueue != nullptr);
+	assert(m_pFence != nullptr);
+	assert(m_FenceEvent != nullptr);
+
+	//シグナル処理
+	m_pQueue->Signal(m_pFence, m_FenceCounter[m_FrameIndex]);
+
+	//完了時にイベントを設定する..
+	m_pFence->SetEventOnCompletion(m_FenceCounter[m_FrameIndex], m_FenceEvent);
+
+	//待機処理
+	WaitForSingleObjectEx(m_FenceEvent, INFINITE, FALSE);
+
+	//カウンターを増やす
+	m_FenceCounter[m_FrameIndex]++;
+}
+
+/*
+終了処理
+色んなものを解放していく
+*/
+void App::TermD3D()
+{
+	//GPU処理の完了を待機
+	WaitGpu();
+
+	//イベント破棄
+	if (m_FenceEvent != nullptr)
+	{
+		CloseHandle(m_FenceEvent);
+		m_FenceEvent = nullptr;
+	}
+
+	//フェンス破棄
+	SafeRelease(m_pFence);
+
+	//レンダーターゲットビューの破棄
+	SafeRelease(m_pHeapRTV);
+	for (auto i = 0u; i < FrameCount; ++i)
+	{
+		SafeRelease(m_pColorBuffer[i]);
+	}
+
+	//コマンドリストの破棄
+	SafeRelease(m_pCmdList);
+
+	//コマンドアロケータの破棄
+	for (auto i = 0u; i < FrameCount; ++i)
+	{
+		SafeRelease(m_pCmdAllocator[i]);
+	}
+
+	SafeRelease(m_pSwapChain);
+
+	//コマンドキューの破棄
+	SafeRelease(m_pQueue);
+
+	//デバイスの破棄
+	SafeRelease(m_pDevice);
 }
