@@ -313,7 +313,7 @@ bool App::InitD3D()
 
 
 		//バックバッファ番号を取得
-		//疑問: バックバッファはスワップ処理で常に入れ替わるのにここで決め打ちで取得してそのままで良いのか？
+		//疑問: バックバッファはスワップ処理で常に入れ替わるのにここで決め打ちで取得してそのままで良いのか？,A: この時点でのバックバッファの番号ってだけ
 		m_FrameIndex = m_pSwapChain->GetCurrentBackBufferIndex();
 
 		//不要になったので開放
@@ -484,6 +484,7 @@ bool App::InitD3D()
 	return true;
 }
 
+//描画処理
 void App::Render()
 {
 	//コマンドの記録を開始
@@ -561,4 +562,66 @@ void App::Render()
 
 	//画面に表示
 	Present(1);
+}
+
+//画面に表示し、次フレームの準備を行う
+/*
+具体的にはバックバッファをディスプレイへ表示したり、バックバッファの入れ替え操作を行う
+*/
+void App::Present(uint32_t interval)
+{
+	//画面に表示
+	/*
+	フロントバッファを画面に表示してバックバッファの入れ替え(スワップ)する
+	*/
+	m_pSwapChain->Present(
+		//SyncInterval: ディスプレイの垂直同期とフレームの表示を同期する方法を指定
+		/*
+		0を指定した場合、即座に同期は行われない
+		1を指定した場合、1回目の垂直同期後に表示を同期する。ディスプレイの更新周期が60Hzの場合60fpssとなる
+		2を指定した場合、垂直同期が2回実行されて表示することを意味する
+		3を指定した場合、垂直同期が3回実行されて表示することをする
+		*/
+		interval, 
+		0 //Flags: スワップチェインの表示オプションを指定する。
+	);
+
+	//シグナル処理
+	/*
+	これをすることでコマンドキューの実行が完了したときにフェンスの値が更新されるようになる
+	フェンスの値が更新されたらGPU上でのコマンドの実行が完了したものとして判断できるようになる
+	*/
+	const auto currentValue = m_FenceCounter[m_FrameIndex];
+	m_pQueue->Signal(
+		m_pFence, //pFence: フェンスオブジェクトのポインタ 
+		currentValue //フェンスに設定する値
+	);
+
+	//バックバッファ番号を更新
+	/*
+	スワップ処理をしたことによってバックバッファが変わったのでインデックスを更新
+	*/
+	m_FrameIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+
+	//次のフレームの描画準備がまだであれば待機する
+	/*
+	値が更新されてない限り小さくなる
+	*/
+	if (m_pFence->GetCompletedValue() < m_FenceCounter[m_FrameIndex])
+	{
+		//完了していなかったのでこの関数でフェンスの値が指定値になったらイベントを起こすという設定を行う
+		m_pFence->SetEventOnCompletion(
+			m_FenceCounter[m_FrameIndex], //Value: イベントがシグナル状態になった時に設定するフェンスの値 
+			m_FenceEvent //イベントオブジェクトへのハンドル
+		);
+		//ここで実際にイベントが起こるまで待機
+		WaitForSingleObjectEx(
+			m_FenceEvent, //hHandle: オブジェクトのハンドルを指定 
+			INFINITE, //dwMilliseconds: アウトタイム時間
+			FALSE //bAlertable: I/O完了ルーチンや非同期プロシージャ呼び出しをキューにおいた時制御を返すかどうかを指定
+		);
+	}
+
+	//次フレームのフェンスカウンターを増やす
+	m_FenceCounter[m_FrameIndex] = currentValue + 1;
 }
