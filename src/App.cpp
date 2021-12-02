@@ -54,6 +54,20 @@ bool App::InitApp()
 //ウィンドウの初期化処理
 bool App::InitWnd() 
 {
+	//デバッグレイヤの有効化
+#if defined(DEBUG) || defined(_DEBUG)
+	{
+		ComPtr<ID3D12Debug> debug;
+		auto hr = D3D12GetDebugInterface(IID_PPV_ARGS(debug.GetAddressOf()));
+
+		//デバッグレイヤを有効に
+		if (SUCCEEDED(hr))
+		{
+			debug->EnableDebugLayer();
+		}
+	}
+#endif
+
 	//インスタンスハンドルを処理
 	auto hInst = GetModuleHandle(nullptr);
 	if (hInst == nullptr) 
@@ -191,7 +205,7 @@ bool App::InitD3D()
 	auto hr = D3D12CreateDevice(
 		nullptr, //ビデオアダプタへのポインタ設定, デフォを使用したい場合はnullptr
 		D3D_FEATURE_LEVEL_11_0, //デバイスを生成するときに成功されるであろう最小限のバージョンを指定, たとえば最後を12_0にした場合はDX12がサポートされた環境でしかできないが、11_0なら11と12がサポートされた環境でできる
-		IID_PPV_ARGS(&m_pDevice)
+		IID_PPV_ARGS(m_pDevice.GetAddressOf())
 	);
 
 	/*
@@ -235,7 +249,7 @@ bool App::InitD3D()
 		desc.NodeMask = 0; //GPUが一つであれば0を指定。複数のGPUノードが存在する場合はGPUノードを識別するためのビットを指定
 
 		//CreateCommandQueueは見ての通りコマンドキューの生成
-		hr = m_pDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&m_pQueue));
+		hr = m_pDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(m_pQueue.GetAddressOf()));
 		if (FAILED(hr)) 
 		{
 			return false;
@@ -294,7 +308,7 @@ bool App::InitD3D()
 
 		//スワップチェインの生成
 		IDXGISwapChain* pSwapChain = nullptr;
-		hr = pFactory->CreateSwapChain(m_pQueue, &desc, &pSwapChain);
+		hr = pFactory->CreateSwapChain(m_pQueue.Get(), &desc, &pSwapChain);
 		if (FAILED(hr))
 		{
 			SafeRelease(pFactory);
@@ -304,7 +318,7 @@ bool App::InitD3D()
 		//ここからダブルバッファリングを行う際のバックバッファ番号を取得
 
 		//IDXGISwapChain3を取得
-		hr = pSwapChain->QueryInterface(IID_PPV_ARGS(&m_pSwapChain));
+		hr = pSwapChain->QueryInterface(IID_PPV_ARGS(m_pSwapChain.GetAddressOf()));
 		if (FAILED(hr))
 		{
 			SafeRelease(pFactory);
@@ -332,7 +346,7 @@ bool App::InitD3D()
 		{
 			hr = m_pDevice->CreateCommandAllocator(
 				D3D12_COMMAND_LIST_TYPE_DIRECT, //コマンドキューに直接登録可能なコマンドのみを扱える
-				IID_PPV_ARGS(&m_pCmdAllocator[i]));
+				IID_PPV_ARGS(m_pCmdAllocator[i].GetAddressOf()));
 			if (FAILED(hr))
 			{
 				return false;
@@ -345,7 +359,7 @@ bool App::InitD3D()
 		hr = m_pDevice->CreateCommandList(
 			0, //nodeMask: 複数のGPUノードがある場合に、ノードを識別するためのビットマスクを設定します
 			D3D12_COMMAND_LIST_TYPE_DIRECT, //type: 作成するコマンドリストのタイプを指定、コマンドキューに直接登録可能なコマンドのみを扱える
-			m_pCmdAllocator[m_FrameIndex], //pCommandAllocator: コマンドリストを作成するときのコマンドアロケータを指定、2つあるうちの描画コマンドをつんでいくのに使用するのはバックバッファの番号に対応するものなのでインデックスにm_FrameIndexを指定
+			m_pCmdAllocator[m_FrameIndex].Get(), //pCommandAllocator: コマンドリストを作成するときのコマンドアロケータを指定、2つあるうちの描画コマンドをつんでいくのに使用するのはバックバッファの番号に対応するものなのでインデックスにm_FrameIndexを指定
 			nullptr, //pInitialState: パイプラインステートを指定、この引数はオプションなのでnullptrでも可、あとで明示的に指定するためにここでは設定しない。
 			IID_PPV_ARGS(&m_pCmdList)
 		);
@@ -403,7 +417,7 @@ bool App::InitD3D()
 		desc.NodeMask = 0; //複数のGPUノードがある場合にノードを特定するためのビットマスクを設定
 
 		//ディスクリプタヒープを生成
-		hr = m_pDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_pHeapRTV));
+		hr = m_pDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(m_pHeapRTV.GetAddressOf()));
 		if (FAILED(hr))
 		{
 			return false;
@@ -418,7 +432,7 @@ bool App::InitD3D()
 		for (auto i = 0u; i < FrameCount; ++i)
 		{
 			//レンダーターゲットビューの生成にはどのリソースを使用するのかを渡して上げる必要があるのでバッファを取得
-			hr = m_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&m_pColorBuffer[i]));
+			hr = m_pSwapChain->GetBuffer(i, IID_PPV_ARGS(m_pColorBuffer[i].GetAddressOf()));
 			if (FAILED(hr))
 			{
 				return false;
@@ -433,7 +447,7 @@ bool App::InitD3D()
 			viewDesc.Texture2D.PlaneSlice = 0; //テクスチャの平面スライス番号を指定、今回は平面を複数枚持つデータではないので0を指定
 
 			//レンダーターゲットビューの生成
-			m_pDevice->CreateRenderTargetView(m_pColorBuffer[i], &viewDesc, handle);
+			m_pDevice->CreateRenderTargetView(m_pColorBuffer[i].Get(), &viewDesc, handle);
 
 			m_HandleRTV[i] = handle;
 			//ポインタをずらす
@@ -457,7 +471,7 @@ bool App::InitD3D()
 		hr = m_pDevice->CreateFence(
 			m_FenceCounter[m_FrameIndex], //フェンスの初期化に用いる値
 			D3D12_FENCE_FLAG_NONE, //フラグオプション、フェンスを共有するかどうかなど
-			IID_PPV_ARGS(&m_pFence));
+			IID_PPV_ARGS(m_pFence.GetAddressOf()));
 		if (FAILED(hr))
 		{
 			return false;
@@ -489,11 +503,11 @@ bool App::InitD3D()
 void App::Render()
 {
 	//コマンドの記録を開始
-	
+
 	//コマンドバッファの内容を戦闘に戻す
 	m_pCmdAllocator[m_FrameIndex]->Reset();
 	//コマンドリストの初期化処理、第２引数はパイプラインアロケータだが今回は使用しない
-	m_pCmdList->Reset(m_pCmdAllocator[m_FrameIndex], nullptr);
+	m_pCmdList->Reset(m_pCmdAllocator[m_FrameIndex].Get(), nullptr);
 
 	//リソースバリアの設定
 	/*
@@ -505,7 +519,7 @@ void App::Render()
 	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION; //リソースバリアのタイプを指定、今回は様々な使用用途の間のサブリソースセットの遷移を示すバリア
 	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE; //フラグの設定
 	//Transitionはサブリソースが異なる使用用途の場合に設定する
-	barrier.Transition.pResource = m_pColorBuffer[m_FrameIndex]; //遷移に使用するためのリソースのポインタを指定
+	barrier.Transition.pResource = m_pColorBuffer[m_FrameIndex].Get(); //遷移に使用するためのリソースのポインタを指定
 	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT; //サブリソースの使用前の状態を指定
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET; //サブリソースの使用後の状態を指定
 	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES; //遷移のためのサブリソースの番号を指定、今回の場合だとすべてのサブリソースを遷移させる
@@ -545,7 +559,7 @@ void App::Render()
 	*/
 	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-	barrier.Transition.pResource = m_pColorBuffer[m_FrameIndex];
+	barrier.Transition.pResource = m_pColorBuffer[m_FrameIndex].Get();
 	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
 	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
@@ -558,7 +572,7 @@ void App::Render()
 
 	//コマンドを実行
 	//作成したコマンドリストは何もしなければ実行されないのでここでコマンドキューに渡してあげる
-	ID3D12CommandList* ppCmdLists[] = { m_pCmdList };
+	ID3D12CommandList* ppCmdLists[] = { m_pCmdList.Get() };
 	m_pQueue->ExecuteCommandLists(1, ppCmdLists);
 
 	//画面に表示
@@ -594,7 +608,7 @@ void App::Present(uint32_t interval)
 	*/
 	const auto currentValue = m_FenceCounter[m_FrameIndex];
 	m_pQueue->Signal(
-		m_pFence, //pFence: フェンスオブジェクトのポインタ 
+		m_pFence.Get(), //pFence: フェンスオブジェクトのポインタ 
 		currentValue //フェンスに設定する値
 	);
 
@@ -637,7 +651,7 @@ void App::WaitGpu()
 	assert(m_FenceEvent != nullptr);
 
 	//シグナル処理
-	m_pQueue->Signal(m_pFence, m_FenceCounter[m_FrameIndex]);
+	m_pQueue->Signal(m_pFence.Get(), m_FenceCounter[m_FrameIndex]);
 
 	//完了時にイベントを設定する..
 	m_pFence->SetEventOnCompletion(m_FenceCounter[m_FrameIndex], m_FenceEvent);
@@ -666,29 +680,30 @@ void App::TermD3D()
 	}
 
 	//フェンス破棄
-	SafeRelease(m_pFence);
+	m_pFence.Reset();
 
 	//レンダーターゲットビューの破棄
-	SafeRelease(m_pHeapRTV);
+	m_pHeapRTV.Reset();
 	for (auto i = 0u; i < FrameCount; ++i)
 	{
-		SafeRelease(m_pColorBuffer[i]);
+		m_pColorBuffer[i].Reset();
 	}
 
 	//コマンドリストの破棄
-	SafeRelease(m_pCmdList);
+	m_pCmdList.Reset();
 
 	//コマンドアロケータの破棄
 	for (auto i = 0u; i < FrameCount; ++i)
 	{
-		SafeRelease(m_pCmdAllocator[i]);
+		m_pCmdAllocator[i].Reset();
 	}
 
-	SafeRelease(m_pSwapChain);
+	//スワップチェインの破棄
+	m_pSwapChain.Reset();
 
 	//コマンドキューの破棄
-	SafeRelease(m_pQueue);
+	m_pQueue.Reset();
 
 	//デバイスの破棄
-	SafeRelease(m_pDevice);
+	m_pDevice.Reset();
 }
