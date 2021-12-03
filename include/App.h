@@ -30,6 +30,7 @@ private:
 	ComPtr<ID3D12Device> m_pDevice; //デバイス
 	ComPtr<ID3D12CommandQueue> m_pQueue; //コマンドキュー
 	ComPtr<IDXGISwapChain3> m_pSwapChain; //スワップチェーン
+	//ID3D12ResourceはCPUとGPUが物理メモリを読み書きするための一般的な機能をカプセル化したもの
 	ComPtr<ID3D12Resource> m_pColorBuffer[FrameCount]; //カラーバッファ
 	ComPtr<ID3D12CommandAllocator> m_pCmdAllocator[FrameCount]; //コマンドアロケータ
 	ComPtr<ID3D12GraphicsCommandList> m_pCmdList; //コマンドリスト
@@ -48,7 +49,8 @@ private:
 	D3D12_VERTEX_BUFFER_VIEW m_VBV; //頂点バッファビュー
 	D3D12_VIEWPORT m_Viewport; //ビューポート
 	D3D12_RECT m_Scissor; //シザー矩形
-	ConstantBufferView<Transform> m_CBV[FrameCount]; //定数バッファビュー
+	//現在まだ定義されていないのでコメントアウト
+	//ConstantViewBuffer<Transform> m_CBV[FrameCount]; //定数バッファビュー
 	float m_RotateAngle; //回転角
 	
 	bool InitApp();
@@ -61,6 +63,9 @@ private:
 	void Render();
 	void WaitGpu();
 	void Present(uint32_t interval);
+
+	//ヘッダーに含まれていないと補完が入らないんので追加
+	bool OnInit();
 
 	static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 };
