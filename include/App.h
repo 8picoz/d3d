@@ -40,7 +40,7 @@ private:
 	ComPtr<ID3D12Resource> m_pVB; //頂点バッファ
 	ComPtr<ID3D12Resource> m_pCB[FrameCount]; //定数バッファ
 	ComPtr<ID3D12RootSignature> m_pRootSignature; //ルートシグニチャ
-	ComPtr<ID3D12PipelineState> m_pS0; //パイプラインステート
+	ComPtr<ID3D12PipelineState> m_pPS0; //パイプラインステート
 
 	HANDLE m_FenceEvent; //フェンスイベント
 	uint64_t m_FenceCounter[FrameCount]; //フェンスカウンタ
@@ -50,7 +50,7 @@ private:
 	D3D12_VIEWPORT m_Viewport; //ビューポート
 	D3D12_RECT m_Scissor; //シザー矩形
 	//現在まだ定義されていないのでコメントアウト
-	//ConstantViewBuffer<Transform> m_CBV[FrameCount]; //定数バッファビュー
+	ConstantViewBuffer<Transform> m_CBV[FrameCount]; //定数バッファビュー
 	float m_RotateAngle; //回転角
 	
 	bool InitApp();
