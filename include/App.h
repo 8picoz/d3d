@@ -12,6 +12,23 @@
 
 template<typename T> using ComPtr = Microsoft::WRL::ComPtr<T>;
 
+//D3D12の制限から定数バッファを作成する際のメモリアライメントが256byteにならなくては行けない
+struct alignas(256) Transform {
+	DirectX::XMMATRIX World;
+	DirectX::XMMATRIX View;
+	DirectX::XMMATRIX Proj;
+};
+
+//定数バッファービューを定義
+template<typename T>
+struct ConstantBufferView 
+{
+	D3D12_CONSTANT_BUFFER_VIEW_DESC Desc; //定数バッファの構成設定
+	D3D12_CPU_DESCRIPTOR_HANDLE HandleCPU; //CPUディスクリプタハンドル
+	D3D12_GPU_DESCRIPTOR_HANDLE HandleGPU; //GPUディスクリプタハンドル
+	T* pBuffer; //バッファ先頭へのポインタ
+};
+
 class App
 {
 public:
@@ -50,7 +67,7 @@ private:
 	D3D12_VIEWPORT m_Viewport; //ビューポート
 	D3D12_RECT m_Scissor; //シザー矩形
 	//現在まだ定義されていないのでコメントアウト
-	ConstantViewBuffer<Transform> m_CBV[FrameCount]; //定数バッファビュー
+	ConstantBufferView<Transform> m_CBV[FrameCount]; //定数バッファビュー
 	float m_RotateAngle; //回転角
 	
 	bool InitApp();
@@ -66,6 +83,7 @@ private:
 
 	//ヘッダーに含まれていないと補完が入らないんので追加
 	bool OnInit();
+	void OnTerm();
 
 	static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 };

@@ -11,6 +11,13 @@ void SafeRelease(T*& ptr)
 	}
 }
 
+//VSInputに合わせた構造体
+struct Vertex 
+{
+	DirectX::XMFLOAT3 Position;
+	DirectX::XMFLOAT4 Color;
+};
+
 //コンストラクタ
 App::App(uint32_t width, uint32_t height)
 	: m_hInst(nullptr)
@@ -722,8 +729,19 @@ void App::TermD3D()
 bool App::OnInit()
 {
 	//頂点バッファの生成
+	/*
+	頂点バッファは頂点データを纏めて送るために作成するオブジェクト。
+	
+	頂点バッファを作るためには
+	ID3D12Resourceオブジェクトを生成して
+	GPUの仮想アドレス、頂点全体のデータサイズ、1頂点あたりのデータサイズをそれぞれD3D12_VERTEX_BUFFER_VIEW構造体に設定
+	そして実際にVRAMにマッピングをしたあとに
+	そして中点バッファビューを生成
+	*/
 	{
 		//頂点データ
+		//今回は三角形
+		//XMFLOAT3はPosition, XMFLOAT4はColor
 		Vertex vertices[] = {
 			{ DirectX::XMFLOAT3(-1.0f, -1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f) },
 			{ DirectX::XMFLOAT3(1.0f, -1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f) },
@@ -732,33 +750,52 @@ bool App::OnInit()
 
 		//ヒーププロパティ
 		D3D12_HEAP_PROPERTIES prop = {};
+		//ヒープタイプの指定
+		/*
+		D3D12_HEAP_TYPE_UPLOADはCPUへの書き込みが一度でGPU読み込みが一度のデータに適している
+		*/
 		prop.Type = D3D12_HEAP_TYPE_UPLOAD;
+		//ヒープのGPUページプロパティを指定
+		//疑問: 本ではGPUになっていたがCPUページプロパティでは？
+		/*
+		今回の頂点データを1回しか書き込みしないので、特にCPUページプロパティを気にする必要はない
+		ライトコンバインは書き込み指定を一時蓄積しておいてから適切なタイミングでまとめて書き出す方法
+		ライトバックは高速なキャッシュメモリに書き込みを行っておき、CPUの空き時間等を利用してキャッシュメモリからメインメモリに書き込む方式
+		*/
 		prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+		//ヒープに対するメモリプールの指定
+		/*
+		D3D12_MEMORY_POOL_L0はシステムメモリでCPUに対する帯域幅は大きいがGPU帯域幅は少ない
+		D3D12_MEMORY_POOL_L1はVRAMでGPUに対する帯域幅は大きいがCPUからアクセスできない、またUMA(ユニファイドメモリアーキテクチャ)ではこれは使用できない
+		このサンプルではメモリを意識しなくても良いのでUNKNOWNを指定している
+		*/
 		prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-		prop.CreationNodeMask = 1;
-		prop.VisibleNodeMask = 1;
+		prop.CreationNodeMask = 1; //複数GPUについて生成されるべきリソースの場所のノードを指定する。ここで単一GPUによる動作を前提としているので1を指定
+		prop.VisibleNodeMask = 1; //複数GPUについてリソースが可視できる場所のノードの集合を指定。ここで単一GPUによる動作を前提としているので1を指定
 
 		//リソースの設定
 		D3D12_RESOURCE_DESC desc = {};
-		desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		desc.Alignment = 0;
-		desc.Width = sizeof(vertices);
-		desc.Height = 1;
-		desc.DepthOrArraySize = 1;
-		desc.MipLevels = 1;
-		desc.Format = DXGI_FORMAT_UNKNOWN;
-		desc.SampleDesc.Count = 1;
-		desc.SampleDesc.Quality = 0;
-		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+		desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; //リソースの次元をここで列挙(バッファや一次元テクスチャなど)
+		desc.Alignment = 0; //リソースのアライメントを指定, リソースの次元がD3D12_RESOURCE_DIMENSION_BUFFERの場合D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT(64kb)か0を指定する
+		desc.Width = sizeof(vertices); //バッファサイズの指定, ここでは頂点バッファのサイズであるsizeof(vertices)を設定
+		desc.Height = 1; //バッファの場合は1, テクスチャの場合は縦幅を指定
+		desc.DepthOrArraySize = 1; //バッファの場合は1, 三次元テクスチャの場合は奥行きをテクスチャ配列の場合は配列数を指定する
+		desc.MipLevels = 1; //バッファの場合は1、テクスチャの場合はミップマップレベル数を指定する
+		desc.Format = DXGI_FORMAT_UNKNOWN; //バッファの場合はDXGI_FORMAT_UNKNOWNをテクスチャの場合はピクセルフォーマットを指定する
+		//テクスチャの場合はマルチサンプルの設定をする
+		desc.SampleDesc.Count = 1; //バッファの場合は1
+		desc.SampleDesc.Quality = 0; //バッファの場合は0
+		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR; //テクスチャレイアウトを指定
+		desc.Flags = D3D12_RESOURCE_FLAG_NONE; //ビット論理和でフラグを指定
 
 		//リソースを生成
+		//頂点バッファに使用するリソースの生成
 		auto hr = m_pDevice->CreateCommittedResource(
-			&prop,
-			D3D12_HEAP_FLAG_NONE,
-			&desc,
-			D3D12_RESOURCE_STATE_GENERIC_READ,
-			nullptr,
+			&prop, //D3D12_HEAP_PROPERTIESの構造体へのポインタを設定
+			D3D12_HEAP_FLAG_NONE, //ヒープオプションをビット論理和として設定する
+			&desc, //D3D12_RESOURCE_DESCの構造体へのポインタを設定
+			D3D12_RESOURCE_STATE_GENERIC_READ, //リソースの初期状態を指定, これはHEAP_PROPERTIESのtypeをD3D12_HEAP_TYPE_UPLOADにした場合は必ずD3D12_RESOURCE_STATE_GENERIC_READを設定しなければいけない
+			nullptr, //D3D12_CLEAR_VALUE構造体へのポインタを指定して、クリア値を設定する。この引数はレンダーターゲットと深度ステンシルテクスチャのためのオプション。D3D12_RESOURCE_DIMENSION_BUFFERを指定した場合はnullptrを指定する必要がある
 			IID_PPV_ARGS(m_pVB.GetAddressOf())
 		);
 
@@ -767,9 +804,17 @@ bool App::OnInit()
 			return false;
 		}
 
-		//マッピングする
+		//マッピングする(頂点データの書き込み)
 		void* ptr = nullptr;
-		hr = m_pVB->Map(0, nullptr, &ptr);
+		hr = m_pVB->Map(
+			//サブリソースの番号を指定
+			/*
+			サブリソースとはテクスチャのミップマップデータのまとまりのこと
+			*/
+			0, 
+			nullptr, //今回は頂点バッファの全領域をマッピングするので、nullptrを指定する
+			&ptr //リソースデータへのポインタを受け取るメモリブロックへのポインタを指定
+		);
 		if (FAILED(hr))
 		{
 			return false;
@@ -779,22 +824,40 @@ bool App::OnInit()
 		memcpy(ptr, vertices, sizeof(vertices));
 
 		//マッピング解除
-		m_pVB->Unmap(0, nullptr);
+		m_pVB->Unmap(
+			0, //サブリソース番号
+			nullptr //CPUが変更した範囲を指定
+		);
 
 		//頂点バッファビューの設定
-		m_VBV.BufferLocation = m_pVB->GetGPUVirtualAddress();
-		m_VBV.SizeInBytes = static_cast<UINT>(sizeof(vertices));
-		m_VBV.StrideInBytes = static_cast<UINT>(sizeof(Vertex));
+		/*
+		頂点バッファビューは描画コマンドを作成する際に使用する構造体
+		*/
+		m_VBV.BufferLocation = m_pVB->GetGPUVirtualAddress(); //GPUの仮想アドレスを指定, 
+		m_VBV.SizeInBytes = static_cast<UINT>(sizeof(vertices)); //頂点バッファ全体のサイズを設定する
+		m_VBV.StrideInBytes = static_cast<UINT>(sizeof(Vertex)); //1頂点あたりのサイズを設定
 	}
+	//頂点バッファはディスクリプタヒープでやり取りをしないのか？
 
 	//定数バッファ用ディスクリプタヒープの生成
+	/*
+	定数バッファはシェーダ内で計算に使う定数値
+
+	頂点バッファと同様に定義を用意して、その後にリソース生成を行い、定数バッファビューを作成する
+	定数バッファの作成ではCPU側でデータ変更をする可能性が比較的に高く、GPUの処理中にバッファを書き換えてしまうと想定していない動作になる恐れがある。よってレンダーターゲットと同様に定数はダブルバッファ化しておくと良い
+	*/
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
 		desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		//疑問: 定数バッファをダブルバッファ化するのにFrameCountに依存するのは何か違うような
+		/*
+		1つの図形を描くために必要な総数は"1 * FrameCount"であるので(?)
+		*/
 		desc.NumDescriptors = 1 * FrameCount;
-		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		desc.NodeMask = 0;
+		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE; //レンダーターゲットのときはシェーダから見える必要がないためHEAP_NONEを指定していたが今回は頂点シェーダー内で使用するためこれを指定
+		desc.NodeMask = 0; //GPUが一つであれば0を指定。複数のGPUノードが存在する場合はGPUノードを識別するためのビットを指定
 
+		//ディスクリプタヒープ生成
 		auto hr = m_pDevice->CreateDescriptorHeap(
 			&desc,
 			IID_PPV_ARGS(m_pHeapCBV.GetAddressOf())
@@ -810,13 +873,14 @@ bool App::OnInit()
 	{
 		//ヒーププロパティ
 		D3D12_HEAP_PROPERTIES prop = {};
-		prop.Type = D3D12_HEAP_TYPE_UPLOAD;
-		prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+		prop.Type = D3D12_HEAP_TYPE_UPLOAD; //頂点シェーダで使用するのでTypeはD3D12_HEAP_TYPE_UPLOADに
+		prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN; //ここは特にこだわりがないのでUNKNOWN
+		prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN; //ここは特にこだわりがないのでUNKNOWN
 		prop.CreationNodeMask = 1;
 		prop.VisibleNodeMask = 1;
 
 		//リソースの設定
+		//バッファのサイズ以外は基本的に頂点バッファと同じ
 		D3D12_RESOURCE_DESC desc = {};
 		desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 		desc.Alignment = 0;
@@ -830,10 +894,18 @@ bool App::OnInit()
 		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
+		//ハンドルをどれくらいすすめるかを表す
+		/*
+		CBV: Constant Buffer View
+		SRV: Shader Resource View
+		UAV: Unordered Access View
+		*/
 		auto incrementSize = m_pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
+		//定数バッファビューは今回はダブルバッファなのでその分必要となる
 		for (auto i = 0; i < FrameCount; ++i)
 		{
+			//リソースの生成
 			auto hr = m_pDevice->CreateCommittedResource(
 				&prop,
 				D3D12_HEAP_FLAG_NONE,
@@ -848,23 +920,28 @@ bool App::OnInit()
 				return false;
 			}
 
+			//GPUの仮想アドレスを取得
 			auto address = m_pCB[i]->GetGPUVirtualAddress();
+			//この２つはディスクリプタヒープの先頭ハンドルを取得する
 			auto handleCPU = m_pHeapCBV->GetCPUDescriptorHandleForHeapStart();
 			auto handleGPU = m_pHeapCBV->GetGPUDescriptorHandleForHeapStart();
 
+			//ハンドルを移動
 			handleCPU.ptr = incrementSize * i;
 			handleGPU.ptr = incrementSize * i;
 
 			//定数バッファビューの設定
 			m_CBV[i].HandleCPU = handleCPU;
 			m_CBV[i].HandleGPU = handleGPU;
-			m_CBV[i].Desc.BufferLocation = address;
-			m_CBV[i].Desc.SizeInBytes = sizeof(Transform);
+			m_CBV[i].Desc.BufferLocation = address; //GPUの仮想アドレス
+			m_CBV[i].Desc.SizeInBytes = sizeof(Transform); //定数バッファのサイズを指定, ここはalignmentを256byteにしなければいけない
 
 			//定数バッファビューを生成
+			//第２引数はD3D12_CPU_DESCRIPTOR_HANDLE型を指定、この値はディスクリプタヒープから取得可能
 			m_pDevice->CreateConstantBufferView(&m_CBV[i].Desc, handleCPU);
 
 			//マッピング
+			//Map()メソッドはポインタを取得することができる
 			hr = m_pCB[i]->Map(0, nullptr, reinterpret_cast<void**>(&m_CBV[i].pBuffer));
 			if (FAILED(hr))
 			{
@@ -888,34 +965,79 @@ bool App::OnInit()
 	}
 
 	//ルートシグニチャの生成
+	/*
+	ルートシグニチャは定数バッファやテクスチャ、サンプラーといったシェーダー内で使用するリソースのレイアウトを決めるオブジェクト
+	どのシェーダーのレジスタにどのリソースを関連付けるかが決まる
+	レジスタは定数バッファを定義するときに決める
+	*/
 	{
+		//アプリケーションが入力アセンブラを使用することを示す
+		//このフラグがないとルートシグニチャの最適化が小規模になってしまう
 		auto flag = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+		//ドメインシェーダのルートシグニチャへのアクセスを拒否する
 		flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS;
+		//ハルシェーダのルートシグニチャへのアクセスを拒否する
 		flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS;
+		//ジオメトリシェーダーのルートシグニチャへのアクセスを拒否する
 		flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
 		//ルートパラメータの設定
 		D3D12_ROOT_PARAMETER param = {};
+		//ルートパラメータの指定
+		/*
+		ルートパラメータは
+		--
+		ルート定数: 32bitデータを扱いたい場合や32bitデータの塊を使いたい場合
+		定数バッファビュー: ルート定数に比べると大きめのデータ、あるいは構造体のようにデータを纏めて使いたい場合
+		シェーダリソースビュー: テクスチャとして扱いたい場合
+		アンオーダードアクセスビュー: コンピュートシェーダなどで、データの読み/書きを行うバッファとして使いたい場合
+		ディスクリプタテーブル: 定数バッファビュー、シェーダリソースビュー、アンオーダードアクセスビュー、サンプラーの4種類のルートパラメタをまとめて扱いたい場合
+		--
+		があり、これらはそれぞれ対応する構造体が存在する
+		このそれぞれの構造体に出てくるメンバ変数の名前の意味は
+		ShaderRegister: シェーダのレジスタ番号を指定。例えばb1レジスタなら1を指定
+		RegisterSpace: シェーダの論理的なレジスタ空間を指定
+		Num32BitValue: ルート定数で使用、単一のシェーダースロットをしてる定数の数を指定。例えばfloat3なら3を指定
+		これらはルート定数、CBV、SRV、UAVで使用され、
+		ディスクリプタテーブルはpDescriptorRangesというD3D12_DESCRIPTOR_RANGE型の配列とその配列の大きさを決めるNumRangeDescriptorRangesというUINT型のパタメータ
+		D3D12_DESCRIPTOR_RANGEは
+		--
+		RangeType: D3D12_DESCRIPTOR_RANGE_TYPEで指定。SRVかUAVかCBVかサンプラーのどれを使用するかを決める
+		NumDescriptors: ディスクリプタの数を指定、-1またはUINT_MAXを指定すると領域無しとなる
+		RegisterSpace: レジスタ空間を指定
+		OffsetInDescriptorsFromTableStart: ルートシグニチャの先頭からのディスクリプタのオフセットを指定、データが連続せず飛び飛びになる場合はオフセットを指定
+		--
+		*/
+		/*
+		基本的な使い分けとしては
+		10個以上を設定する必要がある場合はディスクリプタテーブルでそれ以外はルートパラメータのタイプに応じて個別設定すると良い
+		定数バッファについてはサイズが小さいものをルート定数にして、大きいものをCBVにするという使い分けが良い
+		*/
+		//疑問: サンプラーとは
 		param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+		//今回はb0なので0
 		param.Descriptor.ShaderRegister = 0;
 		param.Descriptor.RegisterSpace = 0;
+		//今回は頂点シェーダーでアクセスできれば良いので
 		param.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 
 		//ルートシグニチャの設定
 		D3D12_ROOT_SIGNATURE_DESC desc = {};
-		desc.NumParameters = 1;
-		desc.NumStaticSamplers = 0;
-		desc.pParameters = &param;
-		desc.pStaticSamplers = nullptr;
-		desc.Flags = flag;
+		desc.NumParameters = 1; //ルートパラメータの配列数
+		desc.NumStaticSamplers = 0; //スタティックサンプラーの配列数
+		desc.pParameters = &param; //ルートパラメータの配列
+		desc.pStaticSamplers = nullptr; //スタティックサンプラーの配列
+		desc.Flags = flag; //フラグ指定
 
+		//以下のシリアライズ結果が書き込まれる
 		ComPtr<ID3DBlob> pBlob;
+		//シリアライズが失敗した場合はエラー内容が書き込まれる
 		ComPtr<ID3DBlob> pErrorBlob;
 
-		//シリアライズ
+		//ルートシグニチャのシリアライズ
 		auto hr = D3D12SerializeRootSignature(
 			&desc,
-			D3D_ROOT_SIGNATURE_VERSION_1_0,
+			D3D_ROOT_SIGNATURE_VERSION_1_0, //ルートシグニチャのバージョン
 			pBlob.GetAddressOf(),
 			pErrorBlob.GetAddressOf()
 		);
@@ -927,9 +1049,9 @@ bool App::OnInit()
 
 		//ルートシグニチャを生成
 		hr = m_pDevice->CreateRootSignature(
-			0,
-			pBlob->GetBufferPointer(),
-			pBlob->GetBufferSize(),
+			0, //nodeMask: 単一GPUの場合はゼロを指定
+			pBlob->GetBufferPointer(), //pBlobWithRootSignature: シリアライズしたデータのポインタを指定
+			pBlob->GetBufferSize(), //blobLengthInBytes: シリアライズしたデータのサイズをバイト単位で指定
 			IID_PPV_ARGS(m_pRootSignature.GetAddressOf())
 		);
 
@@ -1052,4 +1174,21 @@ bool App::OnInit()
 
 		return true;
 	}
+}
+
+//終了時の処理
+void App::OnTerm() 
+{
+	for (auto i = 0; i < FrameCount; ++i)
+	{
+		if (m_pCB[i].Get() != nullptr)
+		{
+			m_pCB[i]->Unmap(0, nullptr);
+			memset(&m_CBV[i], 0, sizeof(m_CBV[i]));
+		}
+		m_pCB[i].Reset();
+	}
+
+	m_pVB.Reset();
+	m_pPS0.Reset();
 }

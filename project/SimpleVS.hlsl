@@ -21,6 +21,13 @@ struct VSOutput
 定数バッファとは頂点データ以外にGPU側に送ることができる定数の塊
 */
 //register(b0)は定数バッファ用のレジスタの0番目を使用することを示す
+/*
+レジスタは第２引数にregister(b0, space0)のように入れることができこれはregister(b0, space1)のようにカウントアップする
+これらはいわゆる名前空間のようなものでありレジスタ空間と呼ばれ、レジスタの競合を回避できる
+例えば
+register(t3, space0)とregister(t3, space1)は同じt3レジスタだがレジスタ空間が違うので競合せずにレジスタが上書きされるのを阻止できる
+省略するとspace0となる
+*/
 cubuffer Transform : register(b0)
 {
 	//packoffsetは定数バッファの戦闘からのオフセットを指定できるところ
