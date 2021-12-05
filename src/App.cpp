@@ -22,8 +22,8 @@ struct Vertex
 App::App(uint32_t width, uint32_t height)
 	: m_hInst(nullptr)
 	, m_hWnd(nullptr)
-	, m_width(width)
-	, m_height(height)
+	, m_Width(width)
+	, m_Height(height)
 {}
 
 //デストラクタ
@@ -72,20 +72,6 @@ bool App::InitApp()
 //ウィンドウの初期化処理
 bool App::InitWnd() 
 {
-	//デバッグレイヤの有効化
-#if defined(DEBUG) || defined(_DEBUG)
-	{
-		ComPtr<ID3D12Debug> debug;
-		auto hr = D3D12GetDebugInterface(IID_PPV_ARGS(debug.GetAddressOf()));
-
-		//デバッグレイヤを有効に
-		if (SUCCEEDED(hr))
-		{
-			debug->EnableDebugLayer();
-		}
-	}
-#endif
-
 	//インスタンスハンドルを処理
 	auto hInst = GetModuleHandle(nullptr);
 	if (hInst == nullptr) 
@@ -116,8 +102,8 @@ bool App::InitWnd()
 	m_hInst = hInst;
 
 	RECT rc = {};
-	rc.right = static_cast<LONG>(m_width);
-	rc.bottom = static_cast<LONG>(m_height);
+	rc.right = static_cast<LONG>(m_Width);
+	rc.bottom = static_cast<LONG>(m_Height);
 
 	//ウィンドウサイズを調整
 	auto style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
@@ -184,6 +170,10 @@ void App::MainLoop()
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 		}
+		//136pの三角形の表示でここにRender()を書けと書いてなかったので描画されなかった
+		else {
+			Render();
+		}
 	}
 }
 
@@ -215,6 +205,20 @@ void App::TermWnd()
 */
 bool App::InitD3D()
 {
+	//デバッグレイヤの有効化
+#if defined(DEBUG) || defined(_DEBUG)
+	{
+		ComPtr<ID3D12Debug> debug;
+		auto hr = D3D12GetDebugInterface(IID_PPV_ARGS(debug.GetAddressOf()));
+
+		//デバッグレイヤを有効に
+		if (SUCCEEDED(hr))
+		{
+			debug->EnableDebugLayer();
+		}
+	}
+#endif
+
 	//デバイスの生成
 	/*
 	物理デバイスを表現するためのインターフェイス
@@ -291,8 +295,8 @@ bool App::InitD3D()
 		DXGI自体は基本的にはGPUが接続されているのか列挙したり、描画したフレームを画面へ表示したりするのに使用する
 		*/
 		//この末尾の数字は例えばこのIDXGIFactory4だとDXGIがバージョン1.4のときに加わって入ったものという意味を指す
-		IDXGIFactory4* pFactory = nullptr;
-		hr = CreateDXGIFactory1(IID_PPV_ARGS(&pFactory));
+		ComPtr<IDXGIFactory4> pFactory = nullptr;
+		hr = CreateDXGIFactory1(IID_PPV_ARGS(pFactory.GetAddressOf()));
 		if (FAILED(hr))
 		{
 			return false;
@@ -300,8 +304,8 @@ bool App::InitD3D()
 
 		//スワップチェインの設定
 		DXGI_SWAP_CHAIN_DESC desc = {}; //swapchainの設定用構造体
-		desc.BufferDesc.Width = m_width; //解像度の横幅を指定
-		desc.BufferDesc.Height = m_height; //解像度の縦幅を指定
+		desc.BufferDesc.Width = m_Width; //解像度の横幅を指定
+		desc.BufferDesc.Height = m_Height; //解像度の縦幅を指定
 		//リフレッシュレート(Hz)を指定
 		desc.BufferDesc.RefreshRate.Numerator = 60; //分子
 		desc.BufferDesc.RefreshRate.Denominator = 1; //分母
@@ -325,11 +329,11 @@ bool App::InitD3D()
 		desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 
 		//スワップチェインの生成
-		IDXGISwapChain* pSwapChain = nullptr;
-		hr = pFactory->CreateSwapChain(m_pQueue.Get(), &desc, &pSwapChain);
+		ComPtr<IDXGISwapChain> pSwapChain = nullptr;
+		hr = pFactory->CreateSwapChain(m_pQueue.Get(), &desc, pSwapChain.GetAddressOf());
 		if (FAILED(hr))
 		{
-			SafeRelease(pFactory);
+			pFactory.Reset();
 			return false;
 		}
 
@@ -339,19 +343,18 @@ bool App::InitD3D()
 		hr = pSwapChain->QueryInterface(IID_PPV_ARGS(m_pSwapChain.GetAddressOf()));
 		if (FAILED(hr))
 		{
-			SafeRelease(pFactory);
-			SafeRelease(pSwapChain);
+			pFactory.Reset();
+			pSwapChain.Reset();
 			return false;
 		}
-
 
 		//バックバッファ番号を取得
 		//疑問: バックバッファはスワップ処理で常に入れ替わるのにここで決め打ちで取得してそのままで良いのか？,A: この時点でのバックバッファの番号ってだけ
 		m_FrameIndex = m_pSwapChain->GetCurrentBackBufferIndex();
 
 		//不要になったので開放
-		SafeRelease(pFactory);
-		SafeRelease(pSwapChain);
+		pFactory.Reset();
+		pSwapChain.Reset();
 	}
 
 	//コマンドアロケータの生成
@@ -379,7 +382,7 @@ bool App::InitD3D()
 			D3D12_COMMAND_LIST_TYPE_DIRECT, //type: 作成するコマンドリストのタイプを指定、コマンドキューに直接登録可能なコマンドのみを扱える
 			m_pCmdAllocator[m_FrameIndex].Get(), //pCommandAllocator: コマンドリストを作成するときのコマンドアロケータを指定、2つあるうちの描画コマンドをつんでいくのに使用するのはバックバッファの番号に対応するものなのでインデックスにm_FrameIndexを指定
 			nullptr, //pInitialState: パイプラインステートを指定、この引数はオプションなのでnullptrでも可、あとで明示的に指定するためにここでは設定しない。
-			IID_PPV_ARGS(&m_pCmdList)
+			IID_PPV_ARGS(m_pCmdList.GetAddressOf())
 		);
 		if (FAILED(hr))
 		{
@@ -976,7 +979,7 @@ bool App::OnInit()
 			auto upward = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
 			auto fovY = DirectX::XMConvertToRadians(37.5f);
-			auto aspect = static_cast<float>(m_width) / static_cast<float>(m_height);
+			auto aspect = static_cast<float>(m_Width) / static_cast<float>(m_Height);
 
 			//変換行列の設定
 			m_CBV[i].pBuffer->World = DirectX::XMMatrixIdentity();
@@ -1269,17 +1272,17 @@ bool App::OnInit()
 			//今回はウィンドウ全体に書き込むのでビューポートはこんな感じ
 			m_Viewport.TopLeftX = 0;
 			m_Viewport.TopLeftY = 0;
-			m_Viewport.Width = static_cast<float>(m_width);
-			m_Viewport.Height = static_cast<float>(m_height);
+			m_Viewport.Width = static_cast<float>(m_Width);
+			m_Viewport.Height = static_cast<float>(m_Height);
 			m_Viewport.MinDepth = 0.0f;
 			m_Viewport.MaxDepth = 1.0f;
 
 			//シザー矩形は刈り取る領域を指定
 			//今回はビューポートと同じサイズにしておき、ビューポートの外は描画しないようにする
 			m_Scissor.left = 0;
-			m_Scissor.right = m_width;
+			m_Scissor.right = m_Width;
 			m_Scissor.top = 0;
-			m_Scissor.bottom = m_height;
+			m_Scissor.bottom = m_Height;
 		}
 
 		return true;

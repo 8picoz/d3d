@@ -43,8 +43,8 @@ private:
 
 	HINSTANCE m_hInst;	//アプリケーションインターフェイス用
 	HWND m_hWnd;		//windowのハンドル
-	uint32_t m_width;
-	uint32_t m_height;
+	uint32_t m_Width;
+	uint32_t m_Height;
 
 	ComPtr<ID3D12Device> m_pDevice; //デバイス
 	ComPtr<ID3D12CommandQueue> m_pQueue; //コマンドキュー
@@ -82,8 +82,6 @@ private:
 	void Render();
 	void WaitGpu();
 	void Present(uint32_t interval);
-
-	//ヘッダーに含まれていないと補完が入らないんので追加
 	bool OnInit();
 	void OnTerm();
 
