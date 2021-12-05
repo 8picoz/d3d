@@ -6,9 +6,11 @@
 #include<dxgi1_4.h>
 #include<wrl/client.h>
 #include<DirectXMath.h>
+#include<d3dcompiler.h> //D3DReadFileToBlob()
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "d3dcompiler.lib")
 
 template<typename T> using ComPtr = Microsoft::WRL::ComPtr<T>;
 

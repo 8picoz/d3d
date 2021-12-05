@@ -28,7 +28,7 @@ struct VSOutput
 register(t3, space0)とregister(t3, space1)は同じt3レジスタだがレジスタ空間が違うので競合せずにレジスタが上書きされるのを阻止できる
 省略するとspace0となる
 */
-cubuffer Transform : register(b0)
+cbuffer Transform : register(b0)
 {
 	//packoffsetは定数バッファの戦闘からのオフセットを指定できるところ
 	//c0は先頭データ、c1は先頭からfloatが4つ分の16byte先、なのでc4はc0からfloatが16個分先を指す

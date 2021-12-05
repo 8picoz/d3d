@@ -566,9 +566,32 @@ void App::Render()
 		nullptr //pRects: レンダーターゲットをクリアするための矩形の配列を指定
 	);
 
+	//更新処理
+	{
+		m_RotateAngle += 0.025f;
+		m_CBV[m_FrameIndex].pBuffer->World = DirectX::XMMatrixRotationY(m_RotateAngle);
+	}
+
 	//描画処理
 	{
-		//TODO: ポリゴン描画用の処理を追加
+		//ルートシグニチャを設定
+		m_pCmdList->SetGraphicsRootSignature(m_pRootSignature.Get());
+		//定数ヒープディスクリプタを設定
+		m_pCmdList->SetDescriptorHeaps(1, m_pHeapCBV.GetAddressOf());
+		//定数バッファビューで使用するシェーダのレジスタ番号とGPU仮想アドレスを設定
+		m_pCmdList->SetGraphicsRootConstantBufferView(0, m_CBV[m_FrameIndex].Desc.BufferLocation);
+		//パイプラインステートを設定
+		m_pCmdList->SetPipelineState(m_pPS0.Get());
+
+		//三角形をプリミティブとして設定
+		m_pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		//GPUスロット、個数、頂点バッファビューを設定
+		m_pCmdList->IASetVertexBuffers(0, 1, &m_VBV);
+		//レンダーターゲットへの描画領域を設定
+		m_pCmdList->RSSetViewports(1, &m_Viewport);
+		m_pCmdList->RSSetScissorRects(1, &m_Scissor);
+
+		m_pCmdList->DrawInstanced(3, 1, 0, 0);
 	}
 
 	//リソースバリアの設定
@@ -1062,17 +1085,45 @@ bool App::OnInit()
 	}
 
 	//パイプラインステートの生成
+	/*
+	描画に使用するシェーダや頂点シェーダへの入力データ、描画ステートを設定するためのパイプラインステートを生成
+	パイプラインステートは２種類あり、1つは描画用に使用するグラフィックスパイプラインステートで
+	もう1つはコンピュートシェーダによる計算用に使用するコンピュートパイプラインステート
+	今回は計算ではなく描画に使用するためのグラフィックスパイプラインステートを生成
+	*/
 	{
 		//入力レイアウトの設定
-		D3D12_INPUT_ELEMENT_DESC elements[2];
-		elements[0].SemanticName = "POSITION";
-		elements[0].SemanticIndex = 0;
-		elements[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-		elements[0].InputSlot = 0;
-		elements[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-		elements[0].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
-		elements[0].InstanceDataStepRate = 0;
+		/*
+		入力レイアウトは頂点シェーダの入力がどのようなデータ構造であるかを設定するためのもの
+		頂点内に含まれる1要素をD3D12_INPUT_ELEMENT_DESCで定義する。
 
+		*/
+		D3D12_INPUT_ELEMENT_DESC elements[2];
+		elements[0].SemanticName = "POSITION"; //セマンティクス名を指定
+		//セマンティクス番号を指定
+		/*
+		この番号が必要になるのはHLSL側の定義でセマンティクス名が"POSITION0", "POSITION1", "POSITION2"のようになっているものであり、
+		この場合左から0, 1, 2のようにセマンティクス番号を指定する
+		*/
+		elements[0].SemanticIndex = 0;
+		elements[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT; //float3型ならDXGI_FORMAT_R32G32B32A32_FLOATとなる
+		//入力スロット番号を指定, 有効値は0から15であり、今回は複数の頂点バッファを扱わないので0を指定
+		/*
+		スロットはGPUが頂点データを見る"のぞき穴"のようなものだとイメージすると良い
+		複数の頂点データを一度に流し込みたいときや
+		座標データと法線、カラーのようにスロットを分けることもある
+		*/
+		elements[0].InputSlot = 0; 
+		elements[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT; //各要素のオフセットをバイト単位単位で指定
+		//データの入力単位を指定
+		/*
+		D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATAの場合は頂点ごとの入力データが頂点シェーダに来る
+		D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATAの場合はインスタンスごとの入力データが頂点シェーダに来る
+		*/
+		elements[0].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
+		elements[0].InstanceDataStepRate = 0; //インスタンスごとのデータの繰り返し回数を指定します。2以上だとそのデータはその数だけ同じデータを使い回すことになる
+
+		//上と同じ
 		elements[1].SemanticName = "COLOR";
 		elements[1].SemanticIndex = 0;
 		elements[1].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
@@ -1082,31 +1133,80 @@ bool App::OnInit()
 		elements[1].InstanceDataStepRate = 0;
 
 		//ラスタライザーステートの設定
+		/*
+		ラスタライズを行う際の設定
+		*/
 		D3D12_RASTERIZER_DESC descRS;
-		descRS.FillMode = D3D12_FILL_MODE_SOLID;
-		descRS.CullMode = D3D12_CULL_MODE_NONE;
-		descRS.FrontCounterClockwise = FALSE;
-		descRS.DepthBias - D3D12_DEFAULT_DEPTH_BIAS;
-		descRS.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
-		descRS.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-		descRS.DepthClipEnable = FALSE;
-		descRS.MultisampleEnable = FALSE;
-		descRS.AntialiasedLineEnable = FALSE;
-		descRS.ForcedSampleCount = 0;
+		descRS.FillMode = D3D12_FILL_MODE_SOLID; //wireframeを描画するかどうかの設定
+		descRS.CullMode = D3D12_CULL_MODE_NONE; //指定された方向に面する三角形を描画しないように設定
+		descRS.FrontCounterClockwise = FALSE; //全面が反時計回りかどうかを指定, この場合は時計回りを全面とする
+		descRS.DepthBias - D3D12_DEFAULT_DEPTH_BIAS; //ピクセルに加算する深度値を設定する
+		descRS.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP; //ピクセル最大深度バイアス値を設定
+		descRS.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS; //ピクセルの後輩に応じた深度バイアス値をスケールするスカラー値を設定
+		descRS.DepthClipEnable = FALSE; //距離に基づくクリッピングをするかどうか
+		descRS.MultisampleEnable = FALSE; //マルチサンプリング有効にするかどうかを指定
+		descRS.AntialiasedLineEnable = FALSE; //線のアンチエイリアシングを有効にするかどうかを指定
+		descRS.ForcedSampleCount = 0; //UAVの描画かもしくはラスタライズの間、サンプル数を矯正的に固定値にする。0の場合はサンプル数が矯正されないことを示す
+		//コンサバティブラスタライゼーションを有効にするかどうかを指定
+		/*
+		コンサバティブラスタライゼーションはちょっとでもピクセルにかかったらラスタライズを実行するという保守的なラスタ来ゼーションを行うためのモード
+		通常のラスタライゼーションはサンプルポイントと呼ばれる判定点があり、ポリゴンがこのサンプルポイントに重なら場合はラスタライゼーションが実行され、重ならない場合は実行されない
+		*/
+		//疑問: サンプルポイント?
 		descRS.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
 
+		/*
+		ブレンドステートとは
+		入力要素と演算操作、出力要素の3つを用いてどのように混合処理を行うかを決めるためのステート
+		入力要素と出力要素はそれぞれ係数を設定することができ、
+		演算操作は入力要素と出力要素をどのように演算するかを設定できる
+		これにより半透明などが実現可能となる
+		*/
+
 		//レンダーターゲットのブレンド設定
+		/*
+		第一引数から順番に
+		BlendEnable: ブレンディングを有効にするかどうかのフラグ
+		LogicIoEnable: 論理演算を有効にするかどうかのフラグ
+		SrcBlend: ピクセルシェーダーから出力されたRGB値に対して実行するブレンドオプションを指定
+		DestBlend: 現在のレンダーターゲットのRGB値に対して実行するブレンドオプションを指定
+		BlendOp: SrcBlendとDestBlendをどのように結合するかを定義
+		SrcBlendAlpha: ピクセルシェーダから出力されたアルファ値に対して実行するブレンドオプションを指定, _COLORで終わるブレンドオプションは指定できない
+		DestBlendAlpha: 現在のレンダーターゲットのアルファ値に対して実行するブレンドオプションを指定m _COLORで終わるブレンドオプションは指定できない
+		BlendOpAlpha: SrcBlendAlphaとDestBlendAlphaをどのように結合するかを定義する
+		LogicOp: レンダーターゲットに対して設定する論理演算を指定
+		RenderTargetWriteMask: レンダーターゲットの書き込みマスクを指定する、ビットごとのOR演算を使用して結合される
+		*/
+		/*
+		入力色と出力色にそれぞれ乗算する係数のD3D12_BLEND一覧
+		ここは大きいので以下で使用されてるものを取り上げる
+		D3D12_BLEND_ZERO: 係数は(0, 0, 0, 0)
+		D3D12_BLEND_ONE: 係数は(1, 1, 1, 1)
+		*/
+		/*
+		ブレンドオプション一覧
+		D3D12_BLEND_OP_ADD: 入力元オペランドと出力先オペランドを加算
+		D3D12_BLEND_OP_SUBTRACT: 出力先オペランドから入力元オペランドを減算
+		D3D12_BLEND_OP_REV_SUBTRACT: 入力元オペランドから出力先オペランドを減算
+		D3D12_BLEND_OP_MIN: 入力元オペランドと出力先オペランドの最小値を求める
+		D3D12_BLEND_OP_MAX: 入力元オペランドと出力先オペランドの最大値を求める
+		*/
 		D3D12_RENDER_TARGET_BLEND_DESC descRTBS = {
 			FALSE, FALSE,
 			D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
-			D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD,
-			D3D12_LOGIC_OP_NOOP,
+			D3D12_BLEND_ONE, D3D12_BLEND_ZERO, D3D12_BLEND_OP_ADD, //Alpha
+			D3D12_LOGIC_OP_NOOP, //何もしない
 			D3D12_COLOR_WRITE_ENABLE_ALL
 		};
 
 		//ブレンドステートの設定
 		D3D12_BLEND_DESC descBS;
+		//アルファトゥガバレッジと呼ばれる機能を有効にするフラグ
+		/*
+		アルファトゥガバレッジはピクセルシェーダから出力されたアルファ成分を取得し、マルチサンプリングアンチエイリアス処理を適用する機能
+		*/
 		descBS.AlphaToCoverageEnable = FALSE;
+		//レンダーターゲットの独立したブレンドを使用するかどうかの設定フラグ
 		descBS.IndependentBlendEnable = FALSE;
 		for (UINT i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
 		{
@@ -1116,6 +1216,8 @@ bool App::OnInit()
 		ComPtr<ID3DBlob> pVSBlob;
 		ComPtr<ID3DBlob> pPSBlob;
 
+		//プロジェクトをビルドした際にシェーダは出力ディレクトリに(Filename).csoとして出力される
+
 		//頂点シェーダ読み込み
 		auto hr = D3DReadFileToBlob(L"SimpleVS.cso", pVSBlob.GetAddressOf());
 		if (FAILED(hr))
@@ -1124,13 +1226,16 @@ bool App::OnInit()
 		}
 
 		//ピクセルシェーダ読み込み
-		auto hr = D3DReadFileToBlob(L"SimplePS.cso", pPSBlob.GetAddressOf());
+		hr = D3DReadFileToBlob(L"SimplePS.cso", pPSBlob.GetAddressOf());
 		if (FAILED(hr))
 		{
 			return false;
 		}
 
 		//パイプラインステートの設定
+		/*
+		パイプラインステートの生成はこの設定を行った構造体を引数として渡す
+		*/
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
 		desc.InputLayout = { elements, _countof(elements) };
 		desc.pRootSignature = m_pRootSignature.Get();
@@ -1158,7 +1263,9 @@ bool App::OnInit()
 		}
 
 		//ビューポートとシザー矩形の設定
+
 		{
+			//今回はウィンドウ全体に書き込むのでビューポートはこんな感じ
 			m_Viewport.TopLeftX = 0;
 			m_Viewport.TopLeftY = 0;
 			m_Viewport.Width = static_cast<float>(m_width);
@@ -1166,6 +1273,8 @@ bool App::OnInit()
 			m_Viewport.MinDepth = 0.0f;
 			m_Viewport.MaxDepth = 1.0f;
 
+			//シザー矩形は刈り取る領域を指定
+			//今回はビューポートと同じサイズにしておき、ビューポートの外は描画しないようにする
 			m_Scissor.left = 0;
 			m_Scissor.right = m_width;
 			m_Scissor.top = 0;
