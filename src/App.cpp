@@ -520,6 +520,12 @@ bool App::InitD3D()
 //描画処理
 void App::Render()
 {
+	//更新処理
+	{
+		m_RotateAngle += 0.025f;
+		m_CBV[m_FrameIndex].pBuffer->World = DirectX::XMMatrixRotationY(m_RotateAngle);
+	}
+
 	//コマンドの記録を開始
 
 	//コマンドバッファの内容を戦闘に戻す
@@ -566,12 +572,6 @@ void App::Render()
 		nullptr //pRects: レンダーターゲットをクリアするための矩形の配列を指定
 	);
 
-	//更新処理
-	{
-		m_RotateAngle += 0.025f;
-		m_CBV[m_FrameIndex].pBuffer->World = DirectX::XMMatrixRotationY(m_RotateAngle);
-	}
-
 	//描画処理
 	{
 		//ルートシグニチャを設定
@@ -581,7 +581,7 @@ void App::Render()
 		//定数バッファビューで使用するシェーダのレジスタ番号とGPU仮想アドレスを設定
 		m_pCmdList->SetGraphicsRootConstantBufferView(0, m_CBV[m_FrameIndex].Desc.BufferLocation);
 		//パイプラインステートを設定
-		m_pCmdList->SetPipelineState(m_pPS0.Get());
+		m_pCmdList->SetPipelineState(m_pPSO.Get());
 
 		//三角形をプリミティブとして設定
 		m_pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -950,8 +950,8 @@ bool App::OnInit()
 			auto handleGPU = m_pHeapCBV->GetGPUDescriptorHandleForHeapStart();
 
 			//ハンドルを移動
-			handleCPU.ptr = incrementSize * i;
-			handleGPU.ptr = incrementSize * i;
+			handleCPU.ptr += incrementSize * i;
+			handleGPU.ptr += incrementSize * i;
 
 			//定数バッファビューの設定
 			m_CBV[i].HandleCPU = handleCPU;
@@ -1219,14 +1219,14 @@ bool App::OnInit()
 		//プロジェクトをビルドした際にシェーダは出力ディレクトリに(Filename).csoとして出力される
 
 		//頂点シェーダ読み込み
-		auto hr = D3DReadFileToBlob(L"SimpleVS.cso", pVSBlob.GetAddressOf());
+		auto hr = D3DReadFileToBlob(L"./SimpleVS.cso", pVSBlob.GetAddressOf());
 		if (FAILED(hr))
 		{
 			return false;
 		}
 
 		//ピクセルシェーダ読み込み
-		hr = D3DReadFileToBlob(L"SimplePS.cso", pPSBlob.GetAddressOf());
+		hr = D3DReadFileToBlob(L"./SimplePS.cso", pPSBlob.GetAddressOf());
 		if (FAILED(hr))
 		{
 			return false;
@@ -1246,15 +1246,17 @@ bool App::OnInit()
 		desc.DepthStencilState.DepthEnable = FALSE;
 		desc.DepthStencilState.StencilEnable = FALSE;
 		desc.SampleMask = UINT_MAX;
-		desc.PrimitiveTopologyType - D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+		desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+		desc.NumRenderTargets = 1;
 		desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 		desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
 		desc.SampleDesc.Count = 1;
 		desc.SampleDesc.Quality = 0;
+	
 
 		hr = m_pDevice->CreateGraphicsPipelineState(
 			&desc,
-			IID_PPV_ARGS(m_pPS0.GetAddressOf())
+			IID_PPV_ARGS(m_pPSO.GetAddressOf())
 		);
 
 		if (FAILED(hr))
@@ -1263,7 +1265,6 @@ bool App::OnInit()
 		}
 
 		//ビューポートとシザー矩形の設定
-
 		{
 			//今回はウィンドウ全体に書き込むのでビューポートはこんな感じ
 			m_Viewport.TopLeftX = 0;
@@ -1299,5 +1300,5 @@ void App::OnTerm()
 	}
 
 	m_pVB.Reset();
-	m_pPS0.Reset();
+	m_pPSO.Reset();
 }

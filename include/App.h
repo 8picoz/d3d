@@ -59,7 +59,7 @@ private:
 	ComPtr<ID3D12Resource> m_pVB; //頂点バッファ
 	ComPtr<ID3D12Resource> m_pCB[FrameCount]; //定数バッファ
 	ComPtr<ID3D12RootSignature> m_pRootSignature; //ルートシグニチャ
-	ComPtr<ID3D12PipelineState> m_pPS0; //パイプラインステート
+	ComPtr<ID3D12PipelineState> m_pPSO; //パイプラインステート
 
 	HANDLE m_FenceEvent; //フェンスイベント
 	uint64_t m_FenceCounter[FrameCount]; //フェンスカウンタ
