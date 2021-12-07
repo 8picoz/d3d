@@ -785,10 +785,10 @@ bool App::OnInit()
 		//XMFLOAT3はPosition, XMFLOAT4はColor
 		//疑問: COLORの色の割当がいまいちわからない
 		Vertex vertices[] = {
-			{ DirectX::XMFLOAT3(-1.0f, 1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 0.0f) }, //左上
-			{ DirectX::XMFLOAT3(1.0f, 1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f) }, //右上
-			{ DirectX::XMFLOAT3(1.0f, -1.0f, 0.0), DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 0.0f) }, //右下
-			{ DirectX::XMFLOAT3(-1.0f, -1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 0.0f) } //左下
+			{ DirectX::XMFLOAT3(-1.0f, 1.0f, 0.0f), DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f) }, //左上
+			{ DirectX::XMFLOAT3(1.0f, 1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f) }, //右上
+			{ DirectX::XMFLOAT3(1.0f, -1.0f, 0.0), DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f) }, //右下
+			{ DirectX::XMFLOAT3(-1.0f, -1.0f, 0.0f), DirectX::XMFLOAT4(1.0f, 0.0f, 1.0f, 1.0f) } //左下
 		};
 
 		//ヒーププロパティ
@@ -1188,7 +1188,7 @@ bool App::OnInit()
 		この場合左から0, 1, 2のようにセマンティクス番号を指定する
 		*/
 		elements[0].SemanticIndex = 0;
-		elements[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT; //float3型ならDXGI_FORMAT_R32G32B32A32_FLOATとなる
+		elements[0].Format = DXGI_FORMAT_R32G32B32_FLOAT; //float3型ならDXGI_FORMAT_R32G32B32A32_FLOATとなる
 		//入力スロット番号を指定, 有効値は0から15であり、今回は複数の頂点バッファを扱わないので0を指定
 		/*
 		スロットはGPUが頂点データを見る"のぞき穴"のようなものだとイメージすると良い
