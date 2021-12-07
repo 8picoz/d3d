@@ -3,7 +3,7 @@ struct VSInput
 {
 	//コロンの後はセマンティクス
 	//セマンティクスとはこのデータが実際にどのように解釈するかの定義
-	//自由に切れmることができる
+	//自由に名前をつけることができる
 	float3 Position : POSITION; //位置座標
 	float4 Color : COLOR; //頂点カラー
 };

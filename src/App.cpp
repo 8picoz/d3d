@@ -582,6 +582,7 @@ void App::Render()
 		//定数ヒープディスクリプタを設定
 		m_pCmdList->SetDescriptorHeaps(1, m_pHeapCBV.GetAddressOf());
 		//定数バッファビューで使用するシェーダのレジスタ番号とGPU仮想アドレスを設定
+		//疑問: 定数バッファビューには専用のビューがないので仮想アドレスを指定する？
 		m_pCmdList->SetGraphicsRootConstantBufferView(0, m_CBV[m_FrameIndex].Desc.BufferLocation);
 		//パイプラインステートを設定
 		m_pCmdList->SetPipelineState(m_pPSO.Get());
@@ -590,11 +591,25 @@ void App::Render()
 		m_pCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		//GPUスロット、個数、頂点バッファビューを設定
 		m_pCmdList->IASetVertexBuffers(0, 1, &m_VBV);
+		//インデックスバッファの設定
+		m_pCmdList->IASetIndexBuffer(&m_IBV);
 		//レンダーターゲットへの描画領域を設定
 		m_pCmdList->RSSetViewports(1, &m_Viewport);
 		m_pCmdList->RSSetScissorRects(1, &m_Scissor);
 
-		m_pCmdList->DrawInstanced(3, 1, 0, 0);
+		//この方法だと頂点バッファとインデックスバッファに分かれていない
+		//m_pCmdList->DrawInstanced(3, 1, 0, 0);
+
+		//インデックスを使用して指定
+		/*
+		引数の説明
+		IndexCountPerInstance: 一つのインスタンスについて頂点番号がいくつあるかの設定
+		InstanceCount: 描画するインスタンスの数を指定
+		StartIndexLocaion: インデックスを開始するインデックスデータのオフセットを指定
+		BaseVertexLocation: 頂点データの開始位置を指定
+		StartInstanceLocation: 開始インスタンス番号
+		*/
+		m_pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 	}
 
 	//リソースバリアの設定
@@ -768,10 +783,12 @@ bool App::OnInit()
 		//頂点データ
 		//今回は三角形
 		//XMFLOAT3はPosition, XMFLOAT4はColor
+		//疑問: COLORの色の割当がいまいちわからない
 		Vertex vertices[] = {
-			{ DirectX::XMFLOAT3(-1.0f, -1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f) },
-			{ DirectX::XMFLOAT3(1.0f, -1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f) },
-			{ DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f) },
+			{ DirectX::XMFLOAT3(-1.0f, 1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 0.0f) }, //左上
+			{ DirectX::XMFLOAT3(1.0f, 1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f) }, //右上
+			{ DirectX::XMFLOAT3(1.0f, -1.0f, 0.0), DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 0.0f) }, //右下
+			{ DirectX::XMFLOAT3(-1.0f, -1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 0.0f) } //左下
 		};
 
 		//ヒーププロパティ
@@ -830,7 +847,8 @@ bool App::OnInit()
 			return false;
 		}
 
-		//マッピングする(頂点データの書き込み)
+		//マッピングする
+		//これをすることで仮想アドレスを取得することができる
 		void* ptr = nullptr;
 		hr = m_pVB->Map(
 			//サブリソースの番号を指定
@@ -864,6 +882,67 @@ bool App::OnInit()
 		m_VBV.StrideInBytes = static_cast<UINT>(sizeof(Vertex)); //1頂点あたりのサイズを設定
 	}
 	//頂点バッファはディスクリプタヒープでやり取りをしないのか？
+
+	//インデックスバッファの生成
+	{
+		uint32_t indices[] = { 0, 1, 2, 0, 2, 3 };
+
+		//ヒーププロパティ
+		D3D12_HEAP_PROPERTIES prop = {};
+		prop.Type = D3D12_HEAP_TYPE_UPLOAD;
+		prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+		prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+		prop.CreationNodeMask = 1;
+		prop.VisibleNodeMask = 1;
+
+		//リソースの設定
+		D3D12_RESOURCE_DESC desc = {};
+		desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		desc.Alignment = 0;
+		desc.Width = sizeof(indices);
+		desc.Height = 1;
+		desc.DepthOrArraySize = 1;
+		desc.MipLevels = 1;
+		desc.Format = DXGI_FORMAT_UNKNOWN;
+		desc.SampleDesc.Count = 1;
+		desc.SampleDesc.Quality = 0;
+		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+		//リソースを生成
+		auto hr = m_pDevice->CreateCommittedResource(
+			&prop,
+			D3D12_HEAP_FLAG_NONE,
+			&desc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(m_pIB.GetAddressOf())
+		);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		//マッピングする
+		void* ptr = nullptr;
+		hr = m_pIB->Map(0, nullptr, &ptr);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		//インデックスデータをマッピング先に設定
+		memcpy(ptr, indices, sizeof(indices));
+
+		//マッピング解除
+		m_pIB->Unmap(0, nullptr);
+
+		//インデックスバッファビューの設定
+		m_IBV.BufferLocation = m_pIB->GetGPUVirtualAddress();
+		//フォーマットはインデックスのデータ型を指定
+		m_IBV.Format = DXGI_FORMAT_R32_UINT;
+		m_IBV.SizeInBytes = sizeof(indices);
+	}
 
 	//定数バッファ用ディスクリプタヒープの生成
 	/*
