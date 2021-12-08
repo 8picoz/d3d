@@ -1,16 +1,6 @@
 #include "App.h"
 #include <cassert>
 
-template<typename T>
-void SafeRelease(T*& ptr) 
-{
-	if (ptr != nullptr)
-	{
-		ptr->Release();
-		ptr = nullptr;
-	}
-}
-
 //VSInputに合わせた構造体
 struct Vertex 
 {
@@ -24,7 +14,14 @@ App::App(uint32_t width, uint32_t height)
 	, m_hWnd(nullptr)
 	, m_Width(width)
 	, m_Height(height)
-{}
+{
+	for (auto i = 0u; i < FrameCount; ++i)
+	{
+		m_pColorBuffer[i] = nullptr;
+		m_pCmdAllocator[i] = nullptr;
+		m_FenceCounter[i] = 0;
+	}
+}
 
 //デストラクタ
 App::~App()
@@ -179,7 +176,9 @@ void App::MainLoop()
 
 void App::TermApp()
 {
+	OnTerm();
 	TermWnd();
+	TermD3D();
 }
 
 void App::TermWnd()
@@ -476,6 +475,80 @@ bool App::InitD3D()
 		}
 	}
 
+	//深度ステンシルバッファの生成
+	{
+		//ヒーププロパティ
+		D3D12_HEAP_PROPERTIES prop = {};
+		prop.Type = D3D12_HEAP_TYPE_DEFAULT;
+		prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+		prop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+		prop.CreationNodeMask = 1;
+		prop.VisibleNodeMask = 1;
+
+		//リソースの設定
+		D3D12_RESOURCE_DESC resDesc = {};
+		resDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+		resDesc.Alignment = 0;
+		resDesc.Width = m_Width;
+		resDesc.Height = m_Height;
+		resDesc.DepthOrArraySize = 1;
+		resDesc.MipLevels = 1;
+		resDesc.Format = DXGI_FORMAT_D32_FLOAT; //このD32のDというのは深度を表すフォーマット
+		resDesc.SampleDesc.Count = 1;
+		resDesc.SampleDesc.Quality = 0;
+		resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+		resDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL; //深度ステンシルバッファなのでこのように指定
+
+		//この設定はクリア値となり、CreateCommittedResourceに渡してあげる
+		D3D12_CLEAR_VALUE clearValue;
+		clearValue.Format = DXGI_FORMAT_D32_FLOAT;
+		clearValue.DepthStencil.Depth = 1.0;
+		clearValue.DepthStencil.Stencil = 0;
+
+		hr = m_pDevice->CreateCommittedResource(
+			&prop,
+			D3D12_HEAP_FLAG_NONE,
+			&resDesc,
+			D3D12_RESOURCE_STATE_DEPTH_WRITE,
+			&clearValue,
+			IID_PPV_ARGS(m_pDepthBuffer.GetAddressOf())
+		);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		//ディスクリプタヒープの設定
+		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+		heapDesc.NumDescriptors = 1;
+		heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV; //DSV: Depth Stencil View
+		heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		heapDesc.NodeMask = 0;
+
+		hr = m_pDevice->CreateDescriptorHeap(
+			&heapDesc,
+			IID_PPV_ARGS(m_pHeapDSV.GetAddressOf())
+		);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		auto handle = m_pHeapDSV->GetCPUDescriptorHandleForHeapStart();
+		auto incrementSize = m_pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+		//レンダーターゲットと違って画面に表示するピクセル値を決めるためにGPUが実行している最中にしか使わない。そのためダブルバッファ化はしなくても良い
+		D3D12_DEPTH_STENCIL_VIEW_DESC viewDesc = {};
+		viewDesc.Format = DXGI_FORMAT_D32_FLOAT;
+		viewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+		viewDesc.Texture2D.MipSlice = 0;
+		viewDesc.Flags = D3D12_DSV_FLAG_NONE;
+
+		m_pDevice->CreateDepthStencilView(m_pDepthBuffer.Get(), &viewDesc, handle);
+
+		m_HandleDSV = handle;
+	}
+
 	//フェンスの生成
 	/*
 	フェンスオブジェクトとは同期をとるためのもの
@@ -526,7 +599,9 @@ void App::Render()
 	//更新処理
 	{
 		m_RotateAngle += 0.025f;
-		m_CBV[m_FrameIndex].pBuffer->World = DirectX::XMMatrixRotationY(m_RotateAngle);
+		//m_CBV[m_FrameIndex].pBuffer->World = DirectX::XMMatrixRotationY(m_RotateAngle);
+		m_CBV[m_FrameIndex * 2 + 0].pBuffer->World = DirectX::XMMatrixRotationZ(m_RotateAngle + DirectX::XMConvertToRadians(45.0f));
+		m_CBV[m_FrameIndex * 2 + 1].pBuffer->World = DirectX::XMMatrixRotationY(m_RotateAngle) * DirectX::XMMatrixScaling(2.0f, 0.5f, 1.0f);
 	}
 
 	//コマンドの記録を開始
@@ -561,7 +636,7 @@ void App::Render()
 		1, //NumRenderTargetDescripter: 設定するレンダーターゲットビュー用のディスクリプタハンドルの個数を設定
 		&m_HandleRTV[m_FrameIndex], //pRenderTargetDescriptors: 設定するレンダーターゲットビューのハンドルの配列を指定
 		FALSE, //RTSingleHandleToDescriptorRange: 設定するディスクリプタハンドルの配列の範囲を単独とするかどうか指定。例えばRTVを3つ設定する場合TRUEにすると3つのRTVに対して同じディスクリプタハンドルが設定される
-		nullptr //pDepthStencilDescriptor: 深度ステンシルビューディスクリプタの設定
+		&m_HandleDSV //pDepthStencilDescriptor: 深度ステンシルビューディスクリプタの設定
 	);
 
 	//クリアカラーの設定, 背景色
@@ -575,15 +650,28 @@ void App::Render()
 		nullptr //pRects: レンダーターゲットをクリアするための矩形の配列を指定
 	);
 
+	//誤植: 本だとなぜかClearRenderTargetViewの部分が出ていた
+	//深度ステンシルビューをクリア
+	m_pCmdList->ClearDepthStencilView(
+		m_HandleDSV,
+		D3D12_CLEAR_FLAG_DEPTH,
+		1.0f,
+		0,
+		0,
+		nullptr
+	);
+
 	//描画処理
 	{
 		//ルートシグニチャを設定
 		m_pCmdList->SetGraphicsRootSignature(m_pRootSignature.Get());
 		//定数ヒープディスクリプタを設定
 		m_pCmdList->SetDescriptorHeaps(1, m_pHeapCBV.GetAddressOf());
+		/*
 		//定数バッファビューで使用するシェーダのレジスタ番号とGPU仮想アドレスを設定
 		//疑問: 定数バッファビューには専用のビューがないので仮想アドレスを指定する？
 		m_pCmdList->SetGraphicsRootConstantBufferView(0, m_CBV[m_FrameIndex].Desc.BufferLocation);
+		*/
 		//パイプラインステートを設定
 		m_pCmdList->SetPipelineState(m_pPSO.Get());
 
@@ -600,6 +688,8 @@ void App::Render()
 		//この方法だと頂点バッファとインデックスバッファに分かれていない
 		//m_pCmdList->DrawInstanced(3, 1, 0, 0);
 
+		//手前側の三角形を描画
+		m_pCmdList->SetGraphicsRootConstantBufferView(0, m_CBV[m_FrameIndex * 2 + 0].Desc.BufferLocation);
 		//インデックスを使用して指定
 		/*
 		引数の説明
@@ -609,6 +699,10 @@ void App::Render()
 		BaseVertexLocation: 頂点データの開始位置を指定
 		StartInstanceLocation: 開始インスタンス番号
 		*/
+		m_pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+
+		//奥側の三角形を描画
+		m_pCmdList->SetGraphicsRootConstantBufferView(0, m_CBV[m_FrameIndex * 2 + 1].Desc.BufferLocation);
 		m_pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 	}
 
@@ -958,7 +1052,8 @@ bool App::OnInit()
 		/*
 		1つの図形を描くために必要な総数は"1 * FrameCount"であるので(?)
 		*/
-		desc.NumDescriptors = 1 * FrameCount;
+		//2 * FrameCountにすることで2つの図形を描画する用のディスクリプタを含められるヒープを許容できる
+		desc.NumDescriptors = (2 * FrameCount);
 		desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE; //レンダーターゲットのときはシェーダから見える必要がないためHEAP_NONEを指定していたが今回は頂点シェーダー内で使用するためこれを指定
 		desc.NodeMask = 0; //GPUが一つであれば0を指定。複数のGPUノードが存在する場合はGPUノードを識別するためのビットを指定
 
@@ -1008,7 +1103,8 @@ bool App::OnInit()
 		auto incrementSize = m_pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 		//定数バッファビューは今回はダブルバッファなのでその分必要となる
-		for (auto i = 0; i < FrameCount; ++i)
+		//2 *は図形が２個なので
+		for (auto i = 0; i < (2 * FrameCount); ++i)
 		{
 			//リソースの生成
 			auto hr = m_pDevice->CreateCommittedResource(
@@ -1295,6 +1391,13 @@ bool App::OnInit()
 			descBS.RenderTarget[i] = descRTBS;
 		}
 
+		//深度ステンシルステートの設定
+		D3D12_DEPTH_STENCIL_DESC descDSS = {};
+		descDSS.DepthEnable = TRUE; //深度テストは有効化
+		descDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL; //深度値の書き込みマスクを指定
+		descDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL; //深度テストの比較関数を指定
+		descDSS.StencilEnable = FALSE; //ステンシルテストは無効化
+
 		ComPtr<ID3DBlob> pVSBlob;
 		ComPtr<ID3DBlob> pPSBlob;
 
@@ -1325,17 +1428,19 @@ bool App::OnInit()
 		desc.PS = { pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize() };
 		desc.RasterizerState = descRS;
 		desc.BlendState = descBS;
+		/* 深度ステンシルバッファ無効状態
 		desc.DepthStencilState.DepthEnable = FALSE;
 		desc.DepthStencilState.StencilEnable = FALSE;
+		*/
+		desc.DepthStencilState = descDSS;
 		desc.SampleMask = UINT_MAX;
 		desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 		desc.NumRenderTargets = 1;
 		desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-		desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+		desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 		desc.SampleDesc.Count = 1;
 		desc.SampleDesc.Quality = 0;
 	
-
 		hr = m_pDevice->CreateGraphicsPipelineState(
 			&desc,
 			IID_PPV_ARGS(m_pPSO.GetAddressOf())
@@ -1371,7 +1476,7 @@ bool App::OnInit()
 //終了時の処理
 void App::OnTerm() 
 {
-	for (auto i = 0; i < FrameCount; ++i)
+	for (auto i = 0; i < (2 * FrameCount); ++i)
 	{
 		if (m_pCB[i].Get() != nullptr)
 		{

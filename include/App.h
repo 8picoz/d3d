@@ -56,22 +56,25 @@ private:
 	ComPtr<ID3D12DescriptorHeap> m_pHeapRTV; //ディスクリプタヒープ(レンダーターゲットビュー)
 	ComPtr<ID3D12Fence> m_pFence; //フェンス
 	ComPtr<ID3D12DescriptorHeap> m_pHeapCBV; //ディスクリプタヒープ(定数バッファビュー・シェーダーリソースビュー・アンオーダードアクセスビュー)
+	ComPtr<ID3D12DescriptorHeap> m_pHeapDSV; //DSV: Depth Stencil View, 深度ステンシルビュー
 	ComPtr<ID3D12Resource> m_pVB; //頂点バッファ
-	ComPtr<ID3D12Resource> m_pCB[FrameCount]; //定数バッファ
-	ComPtr<ID3D12Resource> m_pIB;
+	ComPtr<ID3D12Resource> m_pCB[FrameCount * 2]; //定数バッファ
+	ComPtr<ID3D12Resource> m_pIB; //インデックスバッファ
+	ComPtr<ID3D12Resource> m_pDepthBuffer; //深度ステンシルバッファ
 	ComPtr<ID3D12RootSignature> m_pRootSignature; //ルートシグニチャ
 	ComPtr<ID3D12PipelineState> m_pPSO; //パイプラインステート
 
 	HANDLE m_FenceEvent; //フェンスイベント
 	uint64_t m_FenceCounter[FrameCount]; //フェンスカウンタ
 	uint32_t m_FrameIndex; //フレーム番号
-	D3D12_CPU_DESCRIPTOR_HANDLE m_HandleRTV[FrameCount]; //CPUディスクリプタ(レンダーターゲットビュー)
+	D3D12_CPU_DESCRIPTOR_HANDLE m_HandleRTV[FrameCount]; //CPUディスクリプタハンドル(レンダーターゲットビュー)
+	D3D12_CPU_DESCRIPTOR_HANDLE m_HandleDSV; //CPUディスクリプタハンドル(深度ステンシルバッファ)
 	D3D12_VERTEX_BUFFER_VIEW m_VBV; //頂点バッファビュー
 	D3D12_INDEX_BUFFER_VIEW m_IBV; //インデックスバッファビュー, 本には書いてない
 	D3D12_VIEWPORT m_Viewport; //ビューポート
 	D3D12_RECT m_Scissor; //シザー矩形
 	//現在まだ定義されていないのでコメントアウト
-	ConstantBufferView<Transform> m_CBV[FrameCount]; //定数バッファビュー
+	ConstantBufferView<Transform> m_CBV[FrameCount * 2]; //定数バッファビュー
 	float m_RotateAngle; //回転角
 	
 	bool InitApp();
