@@ -27,6 +27,7 @@ struct VSOutput
 例えば
 register(t3, space0)とregister(t3, space1)は同じt3レジスタだがレジスタ空間が違うので競合せずにレジスタが上書きされるのを阻止できる
 省略するとspace0となる
+定数バッファのレジスタは"b + 番号"で指定
 */
 cbuffer Transform : register(b0)
 {
