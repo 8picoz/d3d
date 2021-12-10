@@ -10,6 +10,7 @@
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 
 template<typename T> using ComPtr = Microsoft::WRL::ComPtr<T>;
@@ -29,6 +30,13 @@ struct ConstantBufferView
 	D3D12_CPU_DESCRIPTOR_HANDLE HandleCPU; //CPUディスクリプタハンドル
 	D3D12_GPU_DESCRIPTOR_HANDLE HandleGPU; //GPUディスクリプタハンドル
 	T* pBuffer; //バッファ先頭へのポインタ
+};
+
+struct Texture
+{
+	ComPtr<ID3D12Resource> pResource; //リソース
+	D3D12_CPU_DESCRIPTOR_HANDLE HandleCPU; //CPUディスクリプタハンドル
+	D3D12_GPU_DESCRIPTOR_HANDLE HandleGPU; //GPUディスクリプタハンドル
 };
 
 class App
@@ -55,8 +63,9 @@ private:
 	ComPtr<ID3D12GraphicsCommandList> m_pCmdList; //コマンドリスト
 	ComPtr<ID3D12DescriptorHeap> m_pHeapRTV; //ディスクリプタヒープ(レンダーターゲットビュー)
 	ComPtr<ID3D12Fence> m_pFence; //フェンス
-	ComPtr<ID3D12DescriptorHeap> m_pHeapCBV; //ディスクリプタヒープ(定数バッファビュー・シェーダーリソースビュー・アンオーダードアクセスビュー)
 	ComPtr<ID3D12DescriptorHeap> m_pHeapDSV; //DSV: Depth Stencil View, 深度ステンシルビュー
+	//ComPtr<ID3D12DescriptorHeap> m_pHeapCBV; //ディスクリプタヒープ(定数バッファビュー)
+	ComPtr<ID3D12DescriptorHeap> m_pHeapCBV_SRV_UAV; //ディスクリプタヒープ(定数バッファビュー・シェーダーリソースビュー・アンオーダードアクセスビュー)
 	ComPtr<ID3D12Resource> m_pVB; //頂点バッファ
 	ComPtr<ID3D12Resource> m_pCB[FrameCount * 2]; //定数バッファ
 	ComPtr<ID3D12Resource> m_pIB; //インデックスバッファ
@@ -75,6 +84,7 @@ private:
 	D3D12_RECT m_Scissor; //シザー矩形
 	//現在まだ定義されていないのでコメントアウト
 	ConstantBufferView<Transform> m_CBV[FrameCount * 2]; //定数バッファビュー
+	Texture m_Texture; //テクスチャ
 	float m_RotateAngle; //回転角
 	
 	bool InitApp();

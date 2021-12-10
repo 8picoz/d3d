@@ -1,4 +1,8 @@
 #include "App.h"
+#include "ResourceUploadBatch.h"
+#include "DDSTextureLoader.h"
+#include "VertexTypes.h"
+//FileUtilは飛ばした
 #include <cassert>
 
 //VSInputに合わせた構造体
@@ -598,10 +602,11 @@ void App::Render()
 {
 	//更新処理
 	{
+
 		m_RotateAngle += 0.025f;
 		//m_CBV[m_FrameIndex].pBuffer->World = DirectX::XMMatrixRotationY(m_RotateAngle);
 		m_CBV[m_FrameIndex * 2 + 0].pBuffer->World = DirectX::XMMatrixRotationZ(m_RotateAngle + DirectX::XMConvertToRadians(45.0f));
-		m_CBV[m_FrameIndex * 2 + 1].pBuffer->World = DirectX::XMMatrixRotationY(m_RotateAngle) * DirectX::XMMatrixScaling(2.0f, 0.5f, 1.0f);
+		//m_CBV[m_FrameIndex * 2 + 1].pBuffer->World = DirectX::XMMatrixRotationY(m_RotateAngle) * DirectX::XMMatrixScaling(2.0f, 0.5f, 1.0f);
 	}
 
 	//コマンドの記録を開始
@@ -666,7 +671,11 @@ void App::Render()
 		//ルートシグニチャを設定
 		m_pCmdList->SetGraphicsRootSignature(m_pRootSignature.Get());
 		//定数ヒープディスクリプタを設定
-		m_pCmdList->SetDescriptorHeaps(1, m_pHeapCBV.GetAddressOf());
+		m_pCmdList->SetDescriptorHeaps(1, m_pHeapCBV_SRV_UAV.GetAddressOf());
+
+		m_pCmdList->SetGraphicsRootConstantBufferView(0, m_CBV[m_FrameIndex * 2].Desc.BufferLocation);
+		m_pCmdList->SetGraphicsRootDescriptorTable(1, m_Texture.HandleGPU);
+
 		/*
 		//定数バッファビューで使用するシェーダのレジスタ番号とGPU仮想アドレスを設定
 		//疑問: 定数バッファビューには専用のビューがないので仮想アドレスを指定する？
@@ -685,25 +694,29 @@ void App::Render()
 		m_pCmdList->RSSetViewports(1, &m_Viewport);
 		m_pCmdList->RSSetScissorRects(1, &m_Scissor);
 
+		m_pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+
+		/*
 		//この方法だと頂点バッファとインデックスバッファに分かれていない
 		//m_pCmdList->DrawInstanced(3, 1, 0, 0);
 
 		//手前側の三角形を描画
 		m_pCmdList->SetGraphicsRootConstantBufferView(0, m_CBV[m_FrameIndex * 2 + 0].Desc.BufferLocation);
 		//インデックスを使用して指定
-		/*
-		引数の説明
-		IndexCountPerInstance: 一つのインスタンスについて頂点番号がいくつあるかの設定
-		InstanceCount: 描画するインスタンスの数を指定
-		StartIndexLocaion: インデックスを開始するインデックスデータのオフセットを指定
-		BaseVertexLocation: 頂点データの開始位置を指定
-		StartInstanceLocation: 開始インスタンス番号
-		*/
+		
+		//引数の説明
+		//IndexCountPerInstance: 一つのインスタンスについて頂点番号がいくつあるかの設定
+		//InstanceCount: 描画するインスタンスの数を指定
+		//StartIndexLocaion: インデックスを開始するインデックスデータのオフセットを指定
+		//BaseVertexLocation: 頂点データの開始位置を指定
+		//StartInstanceLocation: 開始インスタンス番号
+		
 		m_pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 
 		//奥側の三角形を描画
 		m_pCmdList->SetGraphicsRootConstantBufferView(0, m_CBV[m_FrameIndex * 2 + 1].Desc.BufferLocation);
 		m_pCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+		*/
 	}
 
 	//リソースバリアの設定
@@ -878,11 +891,20 @@ bool App::OnInit()
 		//今回は三角形
 		//XMFLOAT3はPosition, XMFLOAT4はColor
 		//疑問: COLORの色の割当がいまいちわからない
+		/*
 		Vertex vertices[] = {
 			{ DirectX::XMFLOAT3(-1.0f, 1.0f, 0.0f), DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f) }, //左上
 			{ DirectX::XMFLOAT3(1.0f, 1.0f, 0.0f), DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f) }, //右上
 			{ DirectX::XMFLOAT3(1.0f, -1.0f, 0.0), DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f) }, //右下
 			{ DirectX::XMFLOAT3(-1.0f, -1.0f, 0.0f), DirectX::XMFLOAT4(1.0f, 0.0f, 1.0f, 1.0f) } //左下
+		};
+		*/
+		//DirectXTK12を入れたのでそれに含まれている型で頂点作成
+		DirectX::VertexPositionTexture vertices[] = {
+			DirectX::VertexPositionTexture(DirectX::XMFLOAT3(-1.0f, 1.0f, 0.0f), DirectX::XMFLOAT2(0.0f, 0.0f)),
+			DirectX::VertexPositionTexture(DirectX::XMFLOAT3(1.0f, 1.0f, 0.0f), DirectX::XMFLOAT2(1.0f, 0.0f)),
+			DirectX::VertexPositionTexture(DirectX::XMFLOAT3(1.0f, -1.0f, 0.0f), DirectX::XMFLOAT2(1.0f, 1.0f)),
+			DirectX::VertexPositionTexture(DirectX::XMFLOAT3(-1.0f, -1.0f, 0.0f), DirectX::XMFLOAT2(0.0f, 1.0f)),
 		};
 
 		//ヒーププロパティ
@@ -973,7 +995,7 @@ bool App::OnInit()
 		*/
 		m_VBV.BufferLocation = m_pVB->GetGPUVirtualAddress(); //GPUの仮想アドレスを指定, 
 		m_VBV.SizeInBytes = static_cast<UINT>(sizeof(vertices)); //頂点バッファ全体のサイズを設定する
-		m_VBV.StrideInBytes = static_cast<UINT>(sizeof(Vertex)); //1頂点あたりのサイズを設定
+		m_VBV.StrideInBytes = static_cast<UINT>(sizeof(DirectX::VertexPositionTexture)); //1頂点あたりのサイズを設定
 	}
 	//頂点バッファはディスクリプタヒープでやり取りをしないのか？
 
@@ -1039,6 +1061,7 @@ bool App::OnInit()
 	}
 
 	//定数バッファ用ディスクリプタヒープの生成
+	//CBV以外もSRVとUAVも扱うように変更
 	/*
 	定数バッファはシェーダ内で計算に使う定数値
 
@@ -1060,7 +1083,7 @@ bool App::OnInit()
 		//ディスクリプタヒープ生成
 		auto hr = m_pDevice->CreateDescriptorHeap(
 			&desc,
-			IID_PPV_ARGS(m_pHeapCBV.GetAddressOf())
+			IID_PPV_ARGS(m_pHeapCBV_SRV_UAV.GetAddressOf())
 		);
 
 		if (FAILED(hr))
@@ -1124,8 +1147,8 @@ bool App::OnInit()
 			//GPUの仮想アドレスを取得
 			auto address = m_pCB[i]->GetGPUVirtualAddress();
 			//この２つはディスクリプタヒープの先頭ハンドルを取得する
-			auto handleCPU = m_pHeapCBV->GetCPUDescriptorHandleForHeapStart();
-			auto handleGPU = m_pHeapCBV->GetGPUDescriptorHandleForHeapStart();
+			auto handleCPU = m_pHeapCBV_SRV_UAV->GetCPUDescriptorHandleForHeapStart();
+			auto handleGPU = m_pHeapCBV_SRV_UAV->GetGPUDescriptorHandleForHeapStart();
 
 			//ハンドルを移動
 			handleCPU.ptr += incrementSize * i;
@@ -1165,6 +1188,104 @@ bool App::OnInit()
 		}
 	}
 
+	//テクスチャの生成
+	{
+		/*
+		* SearchFilePathを実装してないのでとばす
+		//ファイルパスを検索する
+		std::wstring texturePath;
+		if (!SearchFilePath(L"res/SampleTexture.dds", texturePath))
+		{
+			return false;
+		}
+		*/
+
+		//コマンドアロケータ・コマンドリスト生成
+		DirectX::ResourceUploadBatch batch(m_pDevice.Get());
+		batch.Begin();
+
+		std::wstring texturePath = L"./SampleTexture.dds";
+
+		//リソースを生成
+		/*
+		内部で
+		LoadDDSTextureFileEX() //テクセルデータや画像サイズなどのデータを取得
+		ResourceUploadBatch::Upload() //コマンドリストにコピーコマンドが積まれる
+		ResourceUploadBatch::Transition() //ID3D12Resourceの内部ステートがコピー先に使う状態からピクセルシェーダーに使える状態に変わる
+		ResourceUploadBatch::GenerationMips() //ミップマップの生成
+		が順に呼び出しされる
+		*/
+		auto hr = DirectX::CreateDDSTextureFromFile(
+			m_pDevice.Get(),
+			batch,
+			texturePath.c_str(),
+			m_Texture.pResource.GetAddressOf()
+		);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		//コマンドを実行
+		//キューに積まれてコマンドが実行される
+		auto future = batch.End(m_pQueue.Get());
+
+		//コマンドの完了を待機する
+		future.wait();
+
+		//インクリメントサイズを取得
+		auto incrementSize = m_pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+		//CPUディスクリプタハンドルとGPUディスクリプタハンドルをディスクリプタヒープから取得
+		auto handleCPU = m_pHeapCBV_SRV_UAV->GetCPUDescriptorHandleForHeapStart();
+		auto handleGPU = m_pHeapCBV_SRV_UAV->GetGPUDescriptorHandleForHeapStart();
+
+		//テクスチャにディスクリプタを割り当てる
+		handleCPU.ptr += incrementSize * 2;
+		handleGPU.ptr += incrementSize * 2;
+
+		//テクスチャにディスクリプタを割り当てる
+		m_Texture.HandleCPU = handleCPU;
+		m_Texture.HandleGPU = handleGPU;
+
+		//テクスチャの構成設定を取得
+		auto textureDesc = m_Texture.pResource->GetDesc();
+
+		//シェーダリソースビューの設定
+		D3D12_SHADER_RESOURCE_VIEW_DESC viewDesc = {};
+		viewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; //シェーダリソースビューの次元を指定
+		viewDesc.Format = textureDesc.Format; //リソースビューとして使用するDXGI_FORMATを指定
+		//テクスチャフェッチ後に返却する4つの成分のマッピングを指定
+		/*
+		例えばテクスチャとしてはテクセルデータがRGBAとなっているがどうしてもGRABとしてテクセルデータを取り出せるようにしたい場合などのマッピングを変更するために用いられる, いわゆるテクスチャウィズルの指定を行うもの
+		*/
+		viewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		//Texture2Dは二次元テクスチャとして使用する場合の定義
+		/*
+		他にも持てる構造体として
+		Buffer: バッファとして使用する場合
+		Texture1D: 一次元テクスチャとして使用する場合
+		Texture1DArray: 一次元テクスチャ配列として使用する場合
+		Texture2D: 二次元テクスチャとして使用する場合
+		Texture2DArray: 二次元テクスチャ配列として使用する場合
+		Texture2DMS: マルチサンプリング二次元テクスチャとして使用する場合
+		Texture2DMSArray: マルチサンプリング二次元テクスチャ配列として使用する場合
+		Texture3D: 三次元テクスチャとして使用する場合
+		TextureCube: キューブマップとして使用する場合
+		TextureCubeArray: キューブマップ配列として使用する場合
+		今回はViewDimensionにD3D12_SRV_DIMENSION_TEXTURE2Dを指定してるのでTexture2Dとなる
+		*/
+		viewDesc.Texture2D.MostDetailedMip = 0; //使用する際に用いる最も詳細度があるミップマップレベルの番号を指定
+		viewDesc.Texture2D.MipLevels = textureDesc.MipLevels; //ミップマップレベル数を指定
+		viewDesc.Texture2D.PlaneSlice = 0; //テクスチャ内で使用すr平面の番号を指定
+		viewDesc.Texture2D.ResourceMinLODClamp = 0.0f; //サンプルする詳細度レベルをクランプする, 例としてクランプ地に2.0fを指定した場合は各サンプルはミップレベル2.0f未満のアクセスとなる
+
+		//シェーダリソースビューを生成
+		m_pDevice->CreateShaderResourceView(
+			m_Texture.pResource.Get(), &viewDesc, handleCPU
+		);
+	}
+
 	//ルートシグニチャの生成
 	/*
 	ルートシグニチャは定数バッファやテクスチャ、サンプラーといったシェーダー内で使用するリソースのレイアウトを決めるオブジェクト
@@ -1183,7 +1304,7 @@ bool App::OnInit()
 		flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
 		//ルートパラメータの設定
-		D3D12_ROOT_PARAMETER param = {};
+		D3D12_ROOT_PARAMETER param[2] = {};
 		//ルートパラメータの指定
 		/*
 		ルートパラメータは
@@ -1215,19 +1336,61 @@ bool App::OnInit()
 		定数バッファについてはサイズが小さいものをルート定数にして、大きいものをCBVにするという使い分けが良い
 		*/
 		//疑問: サンプラーとは
-		param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+		//param[0]はCBV用のルートパラメータ
+		param[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
 		//今回はb0なので0
-		param.Descriptor.ShaderRegister = 0;
-		param.Descriptor.RegisterSpace = 0;
+		param[0].Descriptor.ShaderRegister = 0;
+		param[0].Descriptor.RegisterSpace = 0;
 		//今回は頂点シェーダーでアクセスできれば良いので
-		param.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+		param[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+
+		//シェーダーリソースビューとして設定
+		D3D12_DESCRIPTOR_RANGE range = {};
+		range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+		range.NumDescriptors = 1;
+		range.BaseShaderRegister = 0;
+		range.RegisterSpace = 0;
+		range.OffsetInDescriptorsFromTableStart = 0;
+
+		//param[1]はテクスチャ用のルートパラメータ
+		/*
+		テクスチャはディスクリプタっテーブル(D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE)として設定
+		これはD3D12_DESCRIPTOR_TYPE_SRVやD3D12_DESCRIPTOR_TYPE_UAVとして設定できるのがローバッファや構造体バッファという形式のみというD3D12の使用によるもの
+		*/
+		param[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		param[1].DescriptorTable.NumDescriptorRanges = 1;
+		param[1].DescriptorTable.pDescriptorRanges = &range;
+		param[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+		//スタティックサンプラーの設定
+		/*
+		サンプラーはテクスチャアドレッシングモードやテクスチャフィルタリングを設定するもの
+		サンプラーの設定方法は2つあり、
+		一つはスタティックサンプラーを利用する方法、これはルートシグニチャを設定した痕で変更することができない
+		もう一つは
+		ディスクリプタテーブルを使ってサンプラーを設定する方法、これはディスクリプタテーブルを差し替えることでルートシグニチャ設定後もサンプラーを変化可能
+		*/
+		D3D12_STATIC_SAMPLER_DESC sampler = {};
+		sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR; //テクスチャをサンプリングするときに使用するフィルタリング方法
+		sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP; //[0, 1]の範囲外にあるテクスチャ座標のu成分を解決するために使用されるアドレスモードを指定
+		sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP; //[0, 1]の範囲外にあるテクスチャ座標のv成分を解決するために使用されるアドレスモードを指定
+		sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP; //[0, 1]の範囲外にあるテクスチャ座標のw成分を解決するために使用されるアドレスモードを指定
+		sampler.MipLODBias = D3D12_DEFAULT_MIP_LOD_BIAS; //計算されたMipLevelからのオフセット、例えば2を指定した場合計算した結果のミップレベルが3だと、ミップレベル5のテクスチャが使用される
+		sampler.MaxAnisotropy = 1; //フィルタとしてD3D12_FILTER_ANISOTROPICかD3D12_FILTER_COMPARISION_ANISOTROPICが使用されている場合に使用されるクランプ値で有効範囲は1~16, 異方性フィルタリング
+		sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER; //既存のサンプルされたデータに対してサンプルされたデータを比較する関数を設定
+		sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK; //Address(U|V|W)にD3D12_TEXTURE_ADDRESS_BORDERが指定されている場合に使用される境界の色を設定
+		sampler.MinLOD = -D3D12_FLOAT32_MAX; //ミップマップ範囲の下限値を示す, 0を最大で最も詳細度があるミップレベルとしてレベルが高くなるにつれて詳細度が減少する
+		sampler.MaxLOD = +D3D12_FLOAT32_MAX; //ミップマップ範囲の上限値を示す, 0を最大で最も詳細度があるミップレベルとしてレベルが高くなるにつれて詳細度が減少する
+		sampler.ShaderRegister = 0; //HLSLのバインディングに対応するシェーダーレジスタを指定, こんかいはHLSL側で"s0"と設定しているので0を指定
+		sampler.RegisterSpace = 0; //レジスタ空間を指定
+		sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; //シェーダ上のサンプラーの可視性を指定
 
 		//ルートシグニチャの設定
 		D3D12_ROOT_SIGNATURE_DESC desc = {};
-		desc.NumParameters = 1; //ルートパラメータの配列数
-		desc.NumStaticSamplers = 0; //スタティックサンプラーの配列数
-		desc.pParameters = &param; //ルートパラメータの配列
-		desc.pStaticSamplers = nullptr; //スタティックサンプラーの配列
+		desc.NumParameters = 2; //ルートパラメータの配列数
+		desc.NumStaticSamplers = 1; //スタティックサンプラーの配列数
+		desc.pParameters = param; //ルートパラメータの配列
+		desc.pStaticSamplers = &sampler; //スタティックサンプラーの配列
 		desc.Flags = flag; //フラグ指定
 
 		//以下のシリアライズ結果が書き込まれる
@@ -1301,10 +1464,22 @@ bool App::OnInit()
 		elements[0].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
 		elements[0].InstanceDataStepRate = 0; //インスタンスごとのデータの繰り返し回数を指定します。2以上だとそのデータはその数だけ同じデータを使い回すことになる
 
+		/*
+		//頂点ごとに色を割り当てる場合
 		//上と同じ
 		elements[1].SemanticName = "COLOR";
 		elements[1].SemanticIndex = 0;
 		elements[1].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+		elements[1].InputSlot = 0;
+		elements[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+		elements[1].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
+		elements[1].InstanceDataStepRate = 0;
+		*/
+
+		//テクスチャ座標入力
+		elements[1].SemanticName = "TEXCOORD";
+		elements[1].SemanticIndex = 0;
+		elements[1].Format = DXGI_FORMAT_R32G32_FLOAT;
 		elements[1].InputSlot = 0;
 		elements[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
 		elements[1].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
@@ -1404,14 +1579,16 @@ bool App::OnInit()
 		//プロジェクトをビルドした際にシェーダは出力ディレクトリに(Filename).csoとして出力される
 
 		//頂点シェーダ読み込み
-		auto hr = D3DReadFileToBlob(L"./SimpleVS.cso", pVSBlob.GetAddressOf());
+		//auto hr = D3DReadFileToBlob(L"./SimpleVS.cso", pVSBlob.GetAddressOf());
+		auto hr = D3DReadFileToBlob(L"./SimpleTexVS.cso", pVSBlob.GetAddressOf());
 		if (FAILED(hr))
 		{
 			return false;
 		}
 
 		//ピクセルシェーダ読み込み
-		hr = D3DReadFileToBlob(L"./SimplePS.cso", pPSBlob.GetAddressOf());
+		//hr = D3DReadFileToBlob(L"./SimplePS.cso", pPSBlob.GetAddressOf());
+		hr = D3DReadFileToBlob(L"./SimpleTexPS.cso", pPSBlob.GetAddressOf());
 		if (FAILED(hr))
 		{
 			return false;
